@@ -1588,8 +1588,6 @@ fn make_settings_page() -> gtk::Box {
     user_description.set_halign(gtk::Align::Start);
     user_description.set_wrap(true);
     let accounts_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    let mut account_checks = Vec::new();
-
     match discover_local_users() {
         Ok(users) if users.is_empty() => {
             let empty = gtk::Label::new(Some("No eligible local user accounts were detected."));
@@ -1598,6 +1596,10 @@ fn make_settings_page() -> gtk::Box {
             accounts_box.append(&empty);
         }
         Ok(users) => {
+            let all_homes: Vec<String> = users
+                .iter()
+                .map(|user| user.home.to_string_lossy().to_string())
+                .collect();
             for user in users {
                 let home = user.home.to_string_lossy().to_string();
                 let selected = {
@@ -1612,15 +1614,11 @@ fn make_settings_page() -> gtk::Box {
                 check.set_active(selected);
                 let config_for_user = config.clone();
                 let status_for_user = status.clone();
-                let all_homes: Vec<String> = account_checks
-                    .iter()
-                    .map(|(existing_home, _): &(String, gtk::CheckButton)| existing_home.clone())
-                    .chain(std::iter::once(home.clone()))
-                    .collect();
+                let all_homes_for_user = all_homes.clone();
                 check.connect_toggled(move |button| {
                     let mut current = config_for_user.borrow_mut();
                     if current.user_selection_mode == "all" {
-                        current.selected_users = all_homes.clone();
+                        current.selected_users = all_homes_for_user.clone();
                         current.user_selection_mode = "selected".to_string();
                     }
                     if button.is_active() {
@@ -1638,7 +1636,6 @@ fn make_settings_page() -> gtk::Box {
                     }
                 });
                 accounts_box.append(&check);
-                account_checks.push((home, check));
             }
         }
         Err(error) => {
