@@ -694,6 +694,8 @@ fn append_storage_header(
         // exactly the same column width and alignment container as every data row.
         let table_weak = table_for_sort.downgrade();
         let status_weak = status_for_sort.downgrade();
+        let destination_config = destination_config.clone();
+        let destination_info = destination_info.clone();
         let sort_state = sort_state.clone();
         let gesture = gtk::GestureClick::new();
         gesture.connect_released(move |_, _, _, _| {
