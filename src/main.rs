@@ -2,13 +2,14 @@ use adw::prelude::*;
 use gtk::prelude::*;
 
 fn main() {
-    adw::Application::builder()
+    let application = adw::Application::builder()
         .application_id("io.github.sprioletta.Cadence")
-        .build()
-        .run();
+        .build();
+
+    application.connect_activate(build_ui);
+    application.run();
 }
 
-#[gtk::main]
 fn build_ui(application: &adw::Application) {
     let header = adw::HeaderBar::builder()
         .title_widget(&gtk::Label::new(Some("Cadence")))
@@ -34,4 +35,3 @@ fn build_ui(application: &adw::Application) {
 
     window.present();
 }
-
