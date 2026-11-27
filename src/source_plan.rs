@@ -473,7 +473,7 @@ mod tests {
     }
 
     #[test]
-    fn selected_user_mode_does_not_exclude_unselected_homes_from_system() {
+    fn selected_user_mode_excludes_all_homes_but_backs_up_only_selected_accounts() {
         let mut config = options();
         config.select_users_explicitly = true;
         config.all_home_directories = vec![
@@ -545,6 +545,25 @@ mod tests {
 
         assert_eq!(plan.skipped_mounts.len(), 5);
         assert_eq!(source_paths(&plan, BackupScope::System), vec![PathBuf::from("/")]);
+    }
+
+    #[test]
+    fn handles_a_separate_home_filesystem_without_system_user_data_duplication() {
+        let plan = build_source_plan(
+            &[mount(1, "/", "ext4"), mount(2, "/home", "xfs")],
+            &options(),
+        )
+        .unwrap();
+
+        let home_system_mount = plan.sources.iter().find(|source| {
+            source.scope == BackupScope::System && source.path == PathBuf::from("/home")
+        }).unwrap();
+        assert!(home_system_mount.exclusions.contains(&PathBuf::from("/home/alice")));
+        assert!(plan.sources.iter().any(|source| {
+            source.scope == BackupScope::UserData
+                && source.path == PathBuf::from("/home/alice")
+                && source.mount_id == 2
+        }));
     }
 
     #[test]
