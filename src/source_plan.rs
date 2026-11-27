@@ -135,7 +135,13 @@ pub fn build_source_plan(
                 continue;
             }
 
-            let mut exclusions = system_exclusions_for_mount(options, mount_point, &all_homes);
+            let homes_to_exclude = if user_data_active {
+                all_homes.as_slice()
+            } else {
+                &[]
+            };
+            let mut exclusions =
+                system_exclusions_for_mount(options, mount_point, homes_to_exclude);
             exclusions.sort();
             exclusions.dedup();
 
@@ -496,8 +502,8 @@ mod tests {
                 PathBuf::from("/"),
                 PathBuf::from("/opt"),
                 PathBuf::from("/usr"),
-                PathBuf::from("/var"),
-                PathBuf::from("/srv")
+                PathBuf::from("/srv"),
+                PathBuf::from("/var")
             ]
         );
     }
