@@ -18,6 +18,7 @@ struct BackupConfig {
     system_enabled: bool,
     user_data_enabled: bool,
     user_data_mode: String,
+    user_selection_mode: String,
     selected_users: Vec<String>,
     custom_exclusions: Vec<String>,
 }
@@ -28,6 +29,7 @@ impl Default for BackupConfig {
             system_enabled: true,
             user_data_enabled: true,
             user_data_mode: "all".to_string(),
+            user_selection_mode: "all".to_string(),
             selected_users: Vec::new(),
             custom_exclusions: Vec::new(),
         }
@@ -47,7 +49,7 @@ impl BackupConfig {
             .filter(|mode| matches!(*mode, "all" | "hidden_only" | "none"))
             .unwrap_or("all")
             .to_string();
-        let selected_users = backup
+        let selected_users: Vec<String> = backup
             .get("user_data")
             .and_then(|value| value.get("home_directories"))
             .and_then(Value::as_array)
@@ -59,6 +61,21 @@ impl BackupConfig {
                     .collect()
             })
             .unwrap_or_default();
+        // Older configurations had no explicit selection mode. An empty legacy
+        // list now migrates to "all"; a populated list migrates to "selected".
+        let user_selection_mode = backup
+            .get("user_data")
+            .and_then(|value| value.get("selection_mode"))
+            .and_then(Value::as_str)
+            .filter(|mode| matches!(*mode, "all" | "selected"))
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                if selected_users.is_empty() {
+                    "all".to_string()
+                } else {
+                    "selected".to_string()
+                }
+            });
         let custom_exclusions = backup
             .get("exclusions")
             .and_then(|value| value.get("custom_paths"))
@@ -83,6 +100,7 @@ impl BackupConfig {
                 .and_then(Value::as_bool)
                 .unwrap_or(defaults.user_data_enabled),
             user_data_mode,
+            user_selection_mode,
             selected_users,
             custom_exclusions,
         }
@@ -99,6 +117,7 @@ impl BackupConfig {
             "user_data": {
                 "enabled": self.user_data_enabled,
                 "include_mode": self.user_data_mode,
+                "selection_mode": self.user_selection_mode,
                 "home_directories": self.selected_users
             },
             "exclusions": {
@@ -258,14 +277,7 @@ fn build_ui(application: &adw::Application) {
         Some("snapshots"),
     );
     stack.add_named(&make_storage_page(), Some("storage"));
-    stack.add_named(
-        &make_page(
-            "preferences-system-symbolic",
-            "Settings",
-            "Configure Cadence preferences.",
-        ),
-        Some("settings"),
-    );
+    stack.add_named(&make_settings_page(), Some("settings"));
     stack.set_visible_child_name("overview");
 
     let sidebar = gtk::Box::new(gtk::Orientation::Vertical, 6);
@@ -1476,6 +1488,245 @@ fn make_summary_card(icon_name: &str, title: &str, value: &str, description: &st
     content.append(&description_label);
     frame.set_child(Some(&content));
     frame
+}
+
+
+fn load_backup_config() -> BackupConfig {
+    fs::read_to_string(destination_config_file())
+        .ok()
+        .and_then(|content| serde_json::from_str::<Value>(&content).ok())
+        .map(|value| BackupConfig::from_json(&value))
+        .unwrap_or_default()
+}
+
+fn save_backup_config(config: &BackupConfig) -> Result<(), String> {
+    let file = destination_config_file();
+    let directory = file
+        .parent()
+        .ok_or_else(|| "Invalid configuration directory.".to_string())?;
+    fs::create_dir_all(directory)
+        .map_err(|error| format!("Could not create configuration directory: {error}"))?;
+    let temporary = file.with_extension("json.tmp");
+    let mut content = fs::read_to_string(&file)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .filter(Value::is_object)
+        .unwrap_or_else(|| serde_json::json!({}));
+    content["schema_version"] = serde_json::json!(1);
+    content["backup"] = config.to_json();
+    fs::write(
+        &temporary,
+        serde_json::to_vec_pretty(&content).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| format!("Could not write backup settings: {error}"))?;
+    fs::rename(&temporary, &file)
+        .map_err(|error| format!("Could not finalize backup settings: {error}"))?;
+    Ok(())
+}
+
+fn make_settings_page() -> gtk::Box {
+    let page = gtk::Box::new(gtk::Orientation::Vertical, 18);
+    page.set_hexpand(true);
+    page.set_vexpand(true);
+    page.set_margin_top(32);
+    page.set_margin_bottom(28);
+    page.set_margin_start(32);
+    page.set_margin_end(32);
+
+    let heading = gtk::Label::new(Some("Backup settings"));
+    heading.add_css_class("title-1");
+    heading.set_halign(gtk::Align::Start);
+    let subtitle = gtk::Label::new(Some(
+        "Choose which parts of this computer Cadence will include in future backups.",
+    ));
+    subtitle.add_css_class("dim-label");
+    subtitle.set_halign(gtk::Align::Start);
+    subtitle.set_wrap(true);
+
+    let config = Rc::new(RefCell::new(load_backup_config()));
+    let status = gtk::Label::new(Some("Settings are saved automatically."));
+    status.add_css_class("dim-label");
+    status.set_halign(gtk::Align::Start);
+    status.set_xalign(0.0);
+    status.set_wrap(true);
+
+    let content_card = gtk::Frame::new(None);
+    content_card.add_css_class("card");
+    content_card.set_hexpand(true);
+    let content_box = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    content_box.set_margin_top(16);
+    content_box.set_margin_bottom(16);
+    content_box.set_margin_start(18);
+    content_box.set_margin_end(18);
+    let content_heading = gtk::Label::new(Some("Backup content"));
+    content_heading.add_css_class("heading");
+    content_heading.set_halign(gtk::Align::Start);
+    let system_check = gtk::CheckButton::with_label("System files");
+    system_check.set_active(config.borrow().system_enabled);
+    let user_data_check = gtk::CheckButton::with_label("User data");
+    user_data_check.set_active(config.borrow().user_data_enabled);
+    content_box.append(&content_heading);
+    content_box.append(&system_check);
+    content_box.append(&user_data_check);
+    content_card.set_child(Some(&content_box));
+
+    let user_card = gtk::Frame::new(None);
+    user_card.add_css_class("card");
+    user_card.set_hexpand(true);
+    let user_box = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    user_box.set_margin_top(16);
+    user_box.set_margin_bottom(16);
+    user_box.set_margin_start(18);
+    user_box.set_margin_end(18);
+    let user_heading = gtk::Label::new(Some("User accounts"));
+    user_heading.add_css_class("heading");
+    user_heading.set_halign(gtk::Align::Start);
+    let user_description = gtk::Label::new(Some(
+        "All detected interactive local accounts are included by default. You can choose accounts individually.",
+    ));
+    user_description.add_css_class("dim-label");
+    user_description.set_halign(gtk::Align::Start);
+    user_description.set_wrap(true);
+    let accounts_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    let mut account_checks = Vec::new();
+
+    match discover_local_users() {
+        Ok(users) if users.is_empty() => {
+            let empty = gtk::Label::new(Some("No eligible local user accounts were detected."));
+            empty.add_css_class("dim-label");
+            empty.set_halign(gtk::Align::Start);
+            accounts_box.append(&empty);
+        }
+        Ok(users) => {
+            for user in users {
+                let home = user.home.to_string_lossy().to_string();
+                let selected = {
+                    let current = config.borrow();
+                    current.user_selection_mode == "all"
+                        || current.selected_users.iter().any(|path| path == &home)
+                };
+                let check = gtk::CheckButton::with_label(&format!(
+                    "{}  —  {}",
+                    user.username, home
+                ));
+                check.set_active(selected);
+                let config_for_user = config.clone();
+                let status_for_user = status.clone();
+                let all_homes: Vec<String> = account_checks
+                    .iter()
+                    .map(|(existing_home, _): &(String, gtk::CheckButton)| existing_home.clone())
+                    .chain(std::iter::once(home.clone()))
+                    .collect();
+                check.connect_toggled(move |button| {
+                    let mut current = config_for_user.borrow_mut();
+                    if current.user_selection_mode == "all" {
+                        current.selected_users = all_homes.clone();
+                        current.user_selection_mode = "selected".to_string();
+                    }
+                    if button.is_active() {
+                        if !current.selected_users.iter().any(|path| path == &home) {
+                            current.selected_users.push(home.clone());
+                        }
+                    } else {
+                        current.selected_users.retain(|path| path != &home);
+                    }
+                    current.selected_users.sort();
+                    current.selected_users.dedup();
+                    match save_backup_config(&current) {
+                        Ok(()) => status_for_user.set_text("Backup settings saved."),
+                        Err(error) => status_for_user.set_text(&format!("Could not save settings: {error}")),
+                    }
+                });
+                accounts_box.append(&check);
+                account_checks.push((home, check));
+            }
+        }
+        Err(error) => {
+            let failure = gtk::Label::new(Some(&format!("Could not detect local users: {error}")));
+            failure.add_css_class("error");
+            failure.set_halign(gtk::Align::Start);
+            failure.set_wrap(true);
+            accounts_box.append(&failure);
+        }
+    }
+
+    user_box.append(&user_heading);
+    user_box.append(&user_description);
+    user_box.append(&accounts_box);
+    user_card.set_child(Some(&user_box));
+
+    let mode_card = gtk::Frame::new(None);
+    mode_card.add_css_class("card");
+    mode_card.set_hexpand(true);
+    let mode_box = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    mode_box.set_margin_top(16);
+    mode_box.set_margin_bottom(16);
+    mode_box.set_margin_start(18);
+    mode_box.set_margin_end(18);
+    let mode_heading = gtk::Label::new(Some("User data inclusion"));
+    mode_heading.add_css_class("heading");
+    mode_heading.set_halign(gtk::Align::Start);
+    let mode_description = gtk::Label::new(Some(
+        "Choose whether to include every file or only hidden files in the selected home directories.",
+    ));
+    mode_description.add_css_class("dim-label");
+    mode_description.set_halign(gtk::Align::Start);
+    mode_description.set_wrap(true);
+    let mode = gtk::ComboBoxText::new();
+    mode.append(Some("all"), "All files");
+    mode.append(Some("hidden_only"), "Hidden files only");
+    mode.set_active_id(Some(&config.borrow().user_data_mode));
+    mode_box.append(&mode_heading);
+    mode_box.append(&mode_description);
+    mode_box.append(&mode);
+    mode_card.set_child(Some(&mode_box));
+
+    let config_for_system = config.clone();
+    let status_for_system = status.clone();
+    system_check.connect_toggled(move |button| {
+        let mut current = config_for_system.borrow_mut();
+        current.system_enabled = button.is_active();
+        match save_backup_config(&current) {
+            Ok(()) => status_for_system.set_text("Backup settings saved."),
+            Err(error) => status_for_system.set_text(&format!("Could not save settings: {error}")),
+        }
+    });
+
+    let config_for_user_data = config.clone();
+    let status_for_user_data = status.clone();
+    let accounts_for_user_data = accounts_box.clone();
+    user_data_check.connect_toggled(move |button| {
+        let mut current = config_for_user_data.borrow_mut();
+        current.user_data_enabled = button.is_active();
+        accounts_for_user_data.set_sensitive(button.is_active());
+        match save_backup_config(&current) {
+            Ok(()) => status_for_user_data.set_text("Backup settings saved."),
+            Err(error) => status_for_user_data.set_text(&format!("Could not save settings: {error}")),
+        }
+    });
+    accounts_box.set_sensitive(config.borrow().user_data_enabled);
+
+    let config_for_mode = config.clone();
+    let status_for_mode = status.clone();
+    mode.connect_changed(move |combo| {
+        let Some(mode_id) = combo.active_id() else {
+            return;
+        };
+        let mut current = config_for_mode.borrow_mut();
+        current.user_data_mode = mode_id.to_string();
+        match save_backup_config(&current) {
+            Ok(()) => status_for_mode.set_text("Backup settings saved."),
+            Err(error) => status_for_mode.set_text(&format!("Could not save settings: {error}")),
+        }
+    });
+
+    page.append(&heading);
+    page.append(&subtitle);
+    page.append(&content_card);
+    page.append(&user_card);
+    page.append(&mode_card);
+    page.append(&status);
+    page
 }
 
 fn make_page(icon: &str, title: &str, description: &str) -> adw::StatusPage {
