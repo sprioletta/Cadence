@@ -7,8 +7,8 @@ const STORAGE_COLUMNS: [(&str, i32); 6] = [
     ("Device", 132),
     ("Type", 60),
     ("Filesystem", 90),
-    ("Size", 90),
-    ("Available", 100),
+    ("Size (GB)", 90),
+    ("Available (GB)", 100),
     ("Mounted at", 120),
 ];
 
@@ -362,12 +362,12 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
     let size = device
         .get("size")
         .and_then(Value::as_u64)
-        .map(format_bytes)
+        .map(format_gigabytes)
         .unwrap_or_else(|| "—".to_string());
     let available = device
         .get("fsavail")
         .and_then(Value::as_u64)
-        .map(format_bytes)
+        .map(format_gigabytes)
         .unwrap_or_else(|| "—".to_string());
     let mountpoint = device
         .get("mountpoints")
@@ -425,15 +425,13 @@ fn json_text(value: &Value, key: &str) -> Option<String> {
     value.get(key).and_then(Value::as_str).map(str::to_string)
 }
 
-fn format_bytes(bytes: u64) -> String {
-    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
-    let mut size = bytes as f64;
-    let mut unit = 0;
-    while size >= 1024.0 && unit < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit += 1;
+fn format_gigabytes(bytes: u64) -> String {
+    let gigabytes = bytes as f64 / 1_000_000_000.0;
+    if gigabytes > 0.0 && gigabytes < 0.1 {
+        "<0.1".to_string()
+    } else {
+        format!("{gigabytes:.1}")
     }
-    format!("{size:.1} {}", UNITS[unit])
 }
 
 fn make_summary_card(icon_name: &str, title: &str, value: &str, description: &str) -> gtk::Frame {
