@@ -127,11 +127,7 @@ pub fn build_source_plan(
 
             // A filesystem mounted inside a home directory belongs to the
             // user-data scope, not the system scope.
-            if user_data_active
-                && all_homes
-                    .iter()
-                    .any(|home| mount_point.starts_with(home))
-            {
+            if user_data_active && all_homes.iter().any(|home| mount_point.starts_with(home)) {
                 continue;
             }
 
@@ -236,12 +232,14 @@ pub fn build_source_plan(
     // The root mount is essential for a system plan. Do not silently return a
     // partial system plan if the inventory contains only unusable root data.
     if options.system_enabled
-        && !plan
-            .sources
-            .iter()
-            .any(|source| source.scope == BackupScope::System && source.mount_id == root_mount.mount_id)
+        && !plan.sources.iter().any(|source| {
+            source.scope == BackupScope::System && source.mount_id == root_mount.mount_id
+        })
     {
-        return Err("The system root filesystem cannot be included by the current mount policy.".to_string());
+        return Err(
+            "The system root filesystem cannot be included by the current mount policy."
+                .to_string(),
+        );
     }
 
     plan.sources.sort_by(|left, right| {
@@ -318,19 +316,30 @@ fn skipped_mount_reason(mount: &MountRecord) -> Option<String> {
 
     match classify_filesystem_name(&mount.filesystem) {
         FilesystemClass::Virtual => {
-            return Some(format!("Virtual filesystem ({}) is not a backup source.", mount.filesystem));
+            return Some(format!(
+                "Virtual filesystem ({}) is not a backup source.",
+                mount.filesystem
+            ));
         }
         FilesystemClass::Network => {
-            return Some(format!("Network filesystem ({}) is excluded by default.", mount.filesystem));
+            return Some(format!(
+                "Network filesystem ({}) is excluded by default.",
+                mount.filesystem
+            ));
         }
         FilesystemClass::Unknown => {
-            return Some(format!("Unknown filesystem ({}) requires an explicit policy.", mount.filesystem));
+            return Some(format!(
+                "Unknown filesystem ({}) requires an explicit policy.",
+                mount.filesystem
+            ));
         }
         FilesystemClass::Local => {}
     }
 
     if is_external_mount(&mount.mount_point) {
-        return Some("External mount under /mnt or /media is not included automatically.".to_string());
+        return Some(
+            "External mount under /mnt or /media is not included automatically.".to_string(),
+        );
     }
 
     None
@@ -338,16 +347,15 @@ fn skipped_mount_reason(mount: &MountRecord) -> Option<String> {
 
 fn classify_filesystem_name(filesystem: &str) -> FilesystemClass {
     match filesystem {
-        "proc" | "sysfs" | "devtmpfs" | "devpts" | "tmpfs" | "cgroup" | "cgroup2"
-        | "pstore" | "securityfs" | "debugfs" | "tracefs" | "configfs" | "mqueue"
-        | "hugetlbfs" | "rpc_pipefs" | "autofs" | "bpf" | "efivarfs" | "fusectl" => {
-            FilesystemClass::Virtual
+        "proc" | "sysfs" | "devtmpfs" | "devpts" | "tmpfs" | "cgroup" | "cgroup2" | "pstore"
+        | "securityfs" | "debugfs" | "tracefs" | "configfs" | "mqueue" | "hugetlbfs"
+        | "rpc_pipefs" | "autofs" | "bpf" | "efivarfs" | "fusectl" => FilesystemClass::Virtual,
+        "nfs" | "nfs4" | "cifs" | "smb3" | "9p" | "ceph" | "glusterfs" | "afs" | "davfs"
+        | "sshfs" => FilesystemClass::Network,
+        "ext2" | "ext3" | "ext4" | "xfs" | "btrfs" | "vfat" | "fat" | "msdos" | "exfat"
+        | "ntfs" | "ntfs3" | "f2fs" | "zfs" | "reiserfs" | "jfs" | "bcachefs" | "iso9660" => {
+            FilesystemClass::Local
         }
-        "nfs" | "nfs4" | "cifs" | "smb3" | "9p" | "ceph" | "glusterfs" | "afs"
-        | "davfs" | "sshfs" => FilesystemClass::Network,
-        "ext2" | "ext3" | "ext4" | "xfs" | "btrfs" | "vfat" | "fat" | "msdos"
-        | "exfat" | "ntfs" | "ntfs3" | "f2fs" | "zfs" | "reiserfs" | "jfs"
-        | "bcachefs" | "iso9660" => FilesystemClass::Local,
         _ => FilesystemClass::Unknown,
     }
 }
@@ -359,20 +367,12 @@ fn is_external_mount(path: &Path) -> bool {
     })
 }
 
-fn deepest_mount_for_path<'a>(
-    mounts: &[&'a MountRecord],
-    path: &Path,
-) -> Option<&'a MountRecord> {
+fn deepest_mount_for_path<'a>(mounts: &[&'a MountRecord], path: &Path) -> Option<&'a MountRecord> {
     mounts
         .iter()
         .copied()
         .filter(|mount| path.starts_with(&mount.mount_point))
-        .max_by_key(|mount| {
-            (
-                mount.mount_point.components().count(),
-                mount.mount_id,
-            )
-        })
+        .max_by_key(|mount| (mount.mount_point.components().count(), mount.mount_id))
 }
 
 fn system_exclusions_for_mount(
@@ -442,9 +442,7 @@ fn user_exclusions_for_path(options: &SourcePlanOptions, source_path: &Path) -> 
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        BackupScope, SourcePlanOptions, UserDataMode, build_source_plan,
-    };
+    use super::{BackupScope, SourcePlanOptions, UserDataMode, build_source_plan};
     use crate::mount_inventory::MountRecord;
     use std::path::PathBuf;
 
@@ -510,13 +508,13 @@ mod tests {
 
     #[test]
     fn excludes_selected_home_from_system_and_adds_it_to_user_scope() {
-        let plan = build_source_plan(
-            &[mount(1, "/", "ext4")],
-            &options(),
-        )
-        .unwrap();
+        let plan = build_source_plan(&[mount(1, "/", "ext4")], &options()).unwrap();
 
-        let system = plan.sources.iter().find(|source| source.scope == BackupScope::System).unwrap();
+        let system = plan
+            .sources
+            .iter()
+            .find(|source| source.scope == BackupScope::System)
+            .unwrap();
         assert!(system.exclusions.contains(&PathBuf::from("/home/alice")));
         assert_eq!(
             source_paths(&plan, BackupScope::UserData),
@@ -552,10 +550,8 @@ mod tests {
     fn selected_user_mode_excludes_all_homes_but_backs_up_only_selected_accounts() {
         let mut config = options();
         config.select_users_explicitly = true;
-        config.all_home_directories = vec![
-            PathBuf::from("/home/alice"),
-            PathBuf::from("/home/bob"),
-        ];
+        config.all_home_directories =
+            vec![PathBuf::from("/home/alice"), PathBuf::from("/home/bob")];
         config.selected_home_directories = vec![PathBuf::from("/home/alice")];
 
         let plan = build_source_plan(&[mount(1, "/", "ext4")], &config).unwrap();
@@ -574,17 +570,21 @@ mod tests {
         let mut config = options();
         config.all_home_directories = vec![PathBuf::from("/data/users/alice")];
 
-        let plan = build_source_plan(
-            &[mount(1, "/", "ext4"), mount(2, "/data", "xfs")],
-            &config,
-        )
-        .unwrap();
+        let plan =
+            build_source_plan(&[mount(1, "/", "ext4"), mount(2, "/data", "xfs")], &config).unwrap();
 
-        let data = plan.sources.iter().find(|source| {
-            source.scope == BackupScope::System && source.path == PathBuf::from("/data")
-        }).unwrap();
+        let data = plan
+            .sources
+            .iter()
+            .find(|source| {
+                source.scope == BackupScope::System && source.path == PathBuf::from("/data")
+            })
+            .unwrap();
 
-        assert!(data.exclusions.contains(&PathBuf::from("/data/users/alice")));
+        assert!(
+            data.exclusions
+                .contains(&PathBuf::from("/data/users/alice"))
+        );
         assert!(plan.sources.iter().any(|source| {
             source.scope == BackupScope::UserData
                 && source.path == PathBuf::from("/data/users/alice")
@@ -595,23 +595,25 @@ mod tests {
     #[test]
     fn flags_non_root_filesystem_roots_and_repeated_device_mounts_for_review() {
         let plan = build_source_plan(
-            &[
-                mount(1, "/", "ext4"),
-                mount(2, "/var/lib/data", "ext4"),
-            ],
+            &[mount(1, "/", "ext4"), mount(2, "/var/lib/data", "ext4")],
             &options(),
         )
         .unwrap();
 
         assert!(plan.warnings.iter().any(|warning| {
-            warning.contains("/var/lib/data") && warning.contains("bind mount or filesystem subvolume")
+            warning.contains("/var/lib/data")
+                && warning.contains("bind mount or filesystem subvolume")
         }));
     }
 
     #[test]
     fn includes_separate_boot_filesystems_as_system_sources() {
         let plan = build_source_plan(
-            &[mount(1, "/", "ext4"), mount(2, "/boot", "ext4"), mount(3, "/boot/efi", "vfat")],
+            &[
+                mount(1, "/", "ext4"),
+                mount(2, "/boot", "ext4"),
+                mount(3, "/boot/efi", "vfat"),
+            ],
             &options(),
         )
         .unwrap();
@@ -636,7 +638,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(plan.skipped_mounts.len(), 5);
-        assert_eq!(source_paths(&plan, BackupScope::System), vec![PathBuf::from("/")]);
+        assert_eq!(
+            source_paths(&plan, BackupScope::System),
+            vec![PathBuf::from("/")]
+        );
     }
 
     #[test]
@@ -647,10 +652,18 @@ mod tests {
         )
         .unwrap();
 
-        let home_system_mount = plan.sources.iter().find(|source| {
-            source.scope == BackupScope::System && source.path == PathBuf::from("/home")
-        }).unwrap();
-        assert!(home_system_mount.exclusions.contains(&PathBuf::from("/home/alice")));
+        let home_system_mount = plan
+            .sources
+            .iter()
+            .find(|source| {
+                source.scope == BackupScope::System && source.path == PathBuf::from("/home")
+            })
+            .unwrap();
+        assert!(
+            home_system_mount
+                .exclusions
+                .contains(&PathBuf::from("/home/alice"))
+        );
         assert!(plan.sources.iter().any(|source| {
             source.scope == BackupScope::UserData
                 && source.path == PathBuf::from("/home/alice")
@@ -669,10 +682,14 @@ mod tests {
         )
         .unwrap();
 
-        assert!(!source_paths(&plan, BackupScope::System)
-            .contains(&PathBuf::from("/home/alice/archive")));
-        assert!(source_paths(&plan, BackupScope::UserData)
-            .contains(&PathBuf::from("/home/alice/archive")));
+        assert!(
+            !source_paths(&plan, BackupScope::System)
+                .contains(&PathBuf::from("/home/alice/archive"))
+        );
+        assert!(
+            source_paths(&plan, BackupScope::UserData)
+                .contains(&PathBuf::from("/home/alice/archive"))
+        );
     }
 
     #[test]
@@ -682,12 +699,31 @@ mod tests {
         config.user_custom_exclusions = vec![PathBuf::from("/home/alice/Downloads")];
 
         let plan = build_source_plan(&[mount(1, "/", "ext4")], &config).unwrap();
-        let system = plan.sources.iter().find(|source| source.scope == BackupScope::System).unwrap();
-        let user = plan.sources.iter().find(|source| source.scope == BackupScope::UserData).unwrap();
+        let system = plan
+            .sources
+            .iter()
+            .find(|source| source.scope == BackupScope::System)
+            .unwrap();
+        let user = plan
+            .sources
+            .iter()
+            .find(|source| source.scope == BackupScope::UserData)
+            .unwrap();
 
-        assert!(system.exclusions.contains(&PathBuf::from("/var/log/private")));
-        assert!(!system.exclusions.contains(&PathBuf::from("/home/alice/Downloads")));
-        assert!(user.exclusions.contains(&PathBuf::from("/home/alice/Downloads")));
+        assert!(
+            system
+                .exclusions
+                .contains(&PathBuf::from("/var/log/private"))
+        );
+        assert!(
+            !system
+                .exclusions
+                .contains(&PathBuf::from("/home/alice/Downloads"))
+        );
+        assert!(
+            user.exclusions
+                .contains(&PathBuf::from("/home/alice/Downloads"))
+        );
         assert!(!user.exclusions.contains(&PathBuf::from("/var/log/private")));
     }
 
@@ -703,8 +739,15 @@ mod tests {
         .unwrap();
 
         assert!(plan.skipped_mounts.iter().any(|mount| mount.mount_id == 2));
-        let root = plan.sources.iter().find(|source| source.scope == BackupScope::System).unwrap();
-        assert!(root.exclusions.contains(&PathBuf::from("/mnt/backup/cadence-snap")));
+        let root = plan
+            .sources
+            .iter()
+            .find(|source| source.scope == BackupScope::System)
+            .unwrap();
+        assert!(
+            root.exclusions
+                .contains(&PathBuf::from("/mnt/backup/cadence-snap"))
+        );
     }
 
     #[test]
@@ -715,28 +758,39 @@ mod tests {
         system_only.user_data_enabled = false;
         let system_plan = build_source_plan(mounts, &system_only).unwrap();
         assert!(!system_plan.sources.is_empty());
-        assert!(system_plan.sources.iter().all(|source| source.scope == BackupScope::System));
+        assert!(
+            system_plan
+                .sources
+                .iter()
+                .all(|source| source.scope == BackupScope::System)
+        );
 
         let mut users_only = options();
         users_only.system_enabled = false;
         let user_plan = build_source_plan(mounts, &users_only).unwrap();
         assert!(!user_plan.sources.is_empty());
-        assert!(user_plan.sources.iter().all(|source| source.scope == BackupScope::UserData));
+        assert!(
+            user_plan
+                .sources
+                .iter()
+                .all(|source| source.scope == BackupScope::UserData)
+        );
     }
 
     #[test]
     fn does_not_fall_back_to_parent_filesystem_for_home_on_excluded_mount() {
         let plan = build_source_plan(
-            &[
-                mount(1, "/", "ext4"),
-                mount(2, "/home", "nfs4"),
-            ],
+            &[mount(1, "/", "ext4"), mount(2, "/home", "nfs4")],
             &options(),
         )
         .unwrap();
 
         assert!(source_paths(&plan, BackupScope::UserData).is_empty());
-        assert!(plan.warnings.iter().any(|warning| warning.contains("excluded filesystem")));
+        assert!(
+            plan.warnings
+                .iter()
+                .any(|warning| warning.contains("excluded filesystem"))
+        );
     }
 
     #[test]
@@ -783,7 +837,11 @@ mod tests {
         let plan = build_source_plan(&[mount(1, "/", "ext4")], &config).unwrap();
 
         assert!(source_paths(&plan, BackupScope::UserData).is_empty());
-        assert!(plan.warnings.iter().any(|warning| warning.contains("covered by a user-data exclusion")));
+        assert!(
+            plan.warnings
+                .iter()
+                .any(|warning| warning.contains("covered by a user-data exclusion"))
+        );
     }
 
     #[test]
