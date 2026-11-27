@@ -338,7 +338,13 @@ fn append_storage_header(table: &gtk::Grid) {
         let label = gtk::Label::new(Some(title));
         label.add_css_class("caption");
         label.add_css_class("dim-label");
-        label.set_halign(gtk::Align::Start);
+        let numeric_column = column == 3 || column == 4;
+        label.set_halign(if numeric_column {
+            gtk::Align::End
+        } else {
+            gtk::Align::Start
+        });
+        label.set_xalign(if numeric_column { 1.0 } else { 0.0 });
         label.set_width_request(*width);
         label.set_hexpand(column == STORAGE_COLUMNS.len() - 1);
         label.set_margin_top(8);
