@@ -1,7 +1,9 @@
 use adw::prelude::*;
 use serde_json::Value;
+use std::cell::RefCell;
 use std::path::Path;
 use std::process::Command;
+use std::rc::Rc;
 
 const STORAGE_COLUMNS: [(&str, i32); 7] = [
     ("Device", 132),
@@ -246,6 +248,7 @@ fn make_storage_page() -> gtk::Box {
     table.set_hexpand(true);
     table.set_margin_start(12);
     table.set_margin_end(12);
+    let sort_state = Rc::new(RefCell::new(None));
 
     let scrolled = gtk::ScrolledWindow::builder()
         .hexpand(true)
@@ -279,19 +282,28 @@ fn make_storage_page() -> gtk::Box {
 
     let table_for_refresh = table.clone();
     let status_for_refresh = status.clone();
+    let sort_for_refresh = sort_state.clone();
     refresh.connect_clicked(move |_| {
-        refresh_storage(&table_for_refresh, &status_for_refresh);
+        refresh_storage(
+            &table_for_refresh,
+            &status_for_refresh,
+            *sort_for_refresh.borrow(),
+        );
     });
 
-    refresh_storage(&table, &status);
+    refresh_storage(&table, &status, *sort_state.borrow());
     page
 }
 
-fn refresh_storage(table: &gtk::Grid, status: &gtk::Label) {
+fn refresh_storage(
+    table: &gtk::Grid,
+    status: &gtk::Label,
+    sort: Option<(usize, bool)>,
+) {
     while let Some(child) = table.first_child() {
         table.remove(&child);
     }
-    append_storage_header(table);
+    append_storage_header(table, sort, table, status);
 
     let output = Command::new("lsblk")
         .args([
@@ -336,6 +348,14 @@ fn refresh_storage(table: &gtk::Grid, status: &gtk::Label) {
     if devices.is_empty() {
         status.set_text("No storage devices or partitions were found.");
         return;
+    }
+
+    if let Some((column, ascending)) = sort {
+        devices.sort_by(|left, right| {
+            let ordering = compare_device_values(left, right, column);
+            let ordering = if ascending { ordering } else { ordering.reverse() };
+            ordering.then_with(|| compare_device_values(left, right, 0))
+        });
     }
 
     let count = devices.len();
@@ -497,23 +517,73 @@ fn collect_devices(device: &Value, devices: &mut Vec<Value>) {
     }
 }
 
-fn append_storage_header(table: &gtk::Grid) {
+fn append_storage_header(
+    table: &gtk::Grid,
+    sort: Option<(usize, bool)>,
+    table_for_sort: &gtk::Grid,
+    status_for_sort: &gtk::Label,
+) {
     for (column, (title, width)) in STORAGE_COLUMNS.iter().enumerate() {
-        let label = gtk::Label::new(Some(title));
-        label.add_css_class("heading");
-        let numeric_column = column == 3 || column == 4;
-        label.set_halign(if numeric_column {
-            gtk::Align::End
+        let label = if let Some((sorted_column, ascending)) = sort {
+            if sorted_column == column {
+                format!("{title} {}", if ascending { "↑" } else { "↓" })
+            } else {
+                (*title).to_string()
+            }
         } else {
-            gtk::Align::Start
+            (*title).to_string()
+        };
+
+        let button = gtk::Button::with_label(&label);
+        button.add_css_class("flat");
+        button.add_css_class("heading");
+        button.set_halign(gtk::Align::Fill);
+        button.set_hexpand(false);
+        button.set_size_request(*width, -1);
+        button.set_margin_top(4);
+        button.set_margin_bottom(4);
+        button.set_tooltip_text(Some(&format!("Sort by {title}")));
+
+        let table_weak = table_for_sort.downgrade();
+        let status_weak = status_for_sort.downgrade();
+        button.connect_clicked(move |_| {
+            if let (Some(table), Some(status)) = (table_weak.upgrade(), status_weak.upgrade()) {
+                let next_sort = match sort {
+                    Some((current_column, ascending)) if current_column == column => {
+                        Some((column, !ascending))
+                    }
+                    _ => Some((column, true)),
+                };
+                refresh_storage(&table, &status, next_sort);
+            }
         });
-        label.set_xalign(if numeric_column { 1.0 } else { 0.0 });
-        label.set_width_request(*width);
-        label.set_hexpand(column == STORAGE_COLUMNS.len() - 1);
-        label.set_margin_top(8);
-        label.set_margin_bottom(8);
-        table.attach(&label, column as i32, 0, 1, 1);
+
+        table.attach(&button, column as i32, 0, 1, 1);
     }
+}
+
+fn compare_device_values(left: &Value, right: &Value, column: usize) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+
+    match column {
+        0 => compare_optional_text(json_text(left, "path").or_else(|| json_text(left, "name")),
+            json_text(right, "path").or_else(|| json_text(right, "name"))),
+        1 => compare_optional_text(json_text(left, "type"), json_text(right, "type")),
+        2 => compare_optional_text(json_text(left, "fstype"), json_text(right, "fstype")),
+        3 => compare_optional_number(left.get("size").and_then(Value::as_u64), right.get("size").and_then(Value::as_u64)),
+        4 => compare_optional_number(left.get("fsavail").and_then(Value::as_u64), right.get("fsavail").and_then(Value::as_u64)),
+        5 => compare_optional_text(device_mountpoint(left), device_mountpoint(right)),
+        6 => destination_status(left).cmp(destination_status(right)),
+        _ => Ordering::Equal,
+    }
+}
+
+fn compare_optional_text(left: Option<String>, right: Option<String>) -> std::cmp::Ordering {
+    left.unwrap_or_default().to_lowercase().cmp(&right.unwrap_or_default().to_lowercase())
+}
+
+fn compare_optional_number(left: Option<u64>, right: Option<u64>) -> std::cmp::Ordering {
+    left.unwrap_or(0).cmp(&right.unwrap_or(0))
 }
 
 fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
@@ -551,7 +621,8 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
         if numeric {
             label.add_css_class("numeric");
         }
-        label.set_width_request(STORAGE_COLUMNS[column].1);
+        label.set_size_request(STORAGE_COLUMNS[column].1, -1);
+        label.set_hexpand(false);
         label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
         label.set_margin_top(8);
         label.set_margin_bottom(8);
@@ -574,7 +645,8 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
         "Mount information",
         &mount_description,
     );
-    mount_button.set_width_request(STORAGE_COLUMNS[5].1);
+    mount_button.set_size_request(STORAGE_COLUMNS[5].1, -1);
+    mount_button.set_hexpand(false);
     mount_button.set_halign(gtk::Align::Start);
     mount_button.set_margin_top(4);
     mount_button.set_margin_bottom(4);
@@ -589,7 +661,8 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
         destination,
         explanation,
     );
-    status_button.set_width_request(STORAGE_COLUMNS[6].1);
+    status_button.set_size_request(STORAGE_COLUMNS[6].1, -1);
+    status_button.set_hexpand(false);
     status_button.set_halign(gtk::Align::Start);
     status_button.set_margin_top(4);
     status_button.set_margin_bottom(4);
