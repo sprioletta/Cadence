@@ -8,7 +8,7 @@ pub enum UserDataMode {
     None,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BackupScope {
     System,
     UserData,
@@ -77,6 +77,7 @@ pub fn build_source_plan(
 
     let user_data_active =
         options.user_data_enabled && options.user_data_mode != UserDataMode::None;
+    let all_homes = normalized_paths(&options.all_home_directories);
     let selected_homes = selected_homes(options);
 
     let mut plan = SourcePlan::default();
@@ -110,13 +111,15 @@ pub fn build_source_plan(
 
             // A filesystem mounted inside a home directory belongs to the
             // user-data scope, not the system scope.
-            if user_data_active && selected_homes.iter().any(|home| {
-                mount_point != home.as_path() && mount_point.starts_with(home)
-            }) {
+            if user_data_active
+                && all_homes
+                    .iter()
+                    .any(|home| mount_point.starts_with(home))
+            {
                 continue;
             }
 
-            let mut exclusions = system_exclusions_for_mount(options, mount_point, &selected_homes);
+            let mut exclusions = system_exclusions_for_mount(options, mount_point, &all_homes);
             exclusions.sort();
             exclusions.dedup();
 
@@ -229,13 +232,15 @@ fn validate_absolute_path(path: &Path) -> Result<(), String> {
 }
 
 fn selected_homes(options: &SourcePlanOptions) -> Vec<PathBuf> {
-    let homes = if options.select_users_explicitly {
-        &options.selected_home_directories
+    if options.select_users_explicitly {
+        normalized_paths(&options.selected_home_directories)
     } else {
-        &options.all_home_directories
-    };
+        normalized_paths(&options.all_home_directories)
+    }
+}
 
-    let mut unique = homes.clone();
+fn normalized_paths(paths: &[PathBuf]) -> Vec<PathBuf> {
+    let mut unique = paths.to_vec();
     unique.sort();
     unique.dedup();
     unique
@@ -481,7 +486,7 @@ mod tests {
         let system = plan.sources.iter().find(|source| source.scope == BackupScope::System).unwrap();
 
         assert!(system.exclusions.contains(&PathBuf::from("/home/alice")));
-        assert!(!system.exclusions.contains(&PathBuf::from("/home/bob")));
+        assert!(system.exclusions.contains(&PathBuf::from("/home/bob")));
         assert_eq!(
             source_paths(&plan, BackupScope::UserData),
             vec![PathBuf::from("/home/alice")]
@@ -588,7 +593,7 @@ mod tests {
 
         assert!(plan.skipped_mounts.iter().any(|mount| mount.mount_id == 2));
         let root = plan.sources.iter().find(|source| source.scope == BackupScope::System).unwrap();
-        assert!(!root.exclusions.contains(&PathBuf::from("/mnt/backup/cadence-snap")));
+        assert!(root.exclusions.contains(&PathBuf::from("/mnt/backup/cadence-snap")));
     }
 
     #[test]
