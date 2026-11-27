@@ -347,7 +347,8 @@ fn collect_devices(device: &Value, devices: &mut Vec<Value>) {
 }
 
 fn make_device_row(device: &Value) -> gtk::ListBoxRow {
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+    let row = gtk::Grid::new();
+    row.set_column_spacing(12);
     row.set_margin_start(12);
     row.set_margin_end(12);
     row.set_margin_top(10);
@@ -397,8 +398,6 @@ fn make_device_row(device: &Value) -> gtk::ListBoxRow {
         mountpoint.clone()
     };
 
-    row.set_spacing(12);
-
     let values = [path, kind, filesystem, size, available, mountpoint_display];
     for (column, (value, (_, width))) in values.into_iter().zip(STORAGE_COLUMNS.iter()).enumerate()
     {
@@ -416,7 +415,7 @@ fn make_device_row(device: &Value) -> gtk::ListBoxRow {
         if column == 5 && mountpoint != "—" {
             label.set_tooltip_text(Some(&mountpoint));
         }
-        row.append(&label);
+        row.attach(&label, column as i32, 0, 1, 1);
     }
 
     let list_row = gtk::ListBoxRow::new();
