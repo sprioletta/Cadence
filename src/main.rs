@@ -1865,7 +1865,6 @@ mod tests {
         assert!(config.selected_users.is_empty());
     }
 
-
     #[test]
     fn legacy_empty_user_list_migrates_to_all_accounts() {
         let value = serde_json::json!({
