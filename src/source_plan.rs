@@ -105,6 +105,22 @@ pub fn build_source_plan(
             .then_with(|| left.mount_id.cmp(&right.mount_id))
     });
 
+    for mount in &eligible_mounts {
+        let non_root_filesystem_root = mount.root != Path::new("/");
+        let same_device_mounted_elsewhere = eligible_mounts.iter().any(|other| {
+            other.mount_id != mount.mount_id
+                && other.major_minor == mount.major_minor
+                && other.mount_point != mount.mount_point
+        });
+
+        if non_root_filesystem_root || same_device_mounted_elsewhere {
+            plan.warnings.push(format!(
+                "Mount {} may be a bind mount or filesystem subvolume; its relationship to other sources requires review.",
+                mount.mount_point.display()
+            ));
+        }
+    }
+
     if options.system_enabled {
         for mount in &eligible_mounts {
             let mount_point = mount.mount_point.as_path();
@@ -556,6 +572,22 @@ mod tests {
             source.scope == BackupScope::UserData
                 && source.path == PathBuf::from("/data/users/alice")
                 && source.mount_id == 2
+        }));
+    }
+
+    #[test]
+    fn flags_non_root_filesystem_roots_and_repeated_device_mounts_for_review() {
+        let plan = build_source_plan(
+            &[
+                mount(1, "/", "ext4"),
+                mount(2, "/var/lib/data", "ext4"),
+            ],
+            &options(),
+        )
+        .unwrap();
+
+        assert!(plan.warnings.iter().any(|warning| {
+            warning.contains("/var/lib/data") && warning.contains("bind mount or filesystem subvolume")
         }));
     }
 
