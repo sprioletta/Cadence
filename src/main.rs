@@ -517,6 +517,22 @@ fn collect_devices(device: &Value, devices: &mut Vec<Value>) {
     }
 }
 
+fn storage_column_alignment(column: usize) -> f32 {
+    match column {
+        3 | 4 => 1.0,
+        5 | 6 => 0.5,
+        _ => 0.0,
+    }
+}
+
+fn storage_cell(column: usize) -> gtk::Box {
+    let cell = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    cell.set_size_request(STORAGE_COLUMNS[column].1, -1);
+    cell.set_hexpand(true);
+    cell.set_halign(gtk::Align::Fill);
+    cell
+}
+
 fn append_storage_header(
     table: &gtk::Grid,
     sort: Option<(usize, bool)>,
@@ -535,27 +551,20 @@ fn append_storage_header(
             (*title).to_string()
         };
 
-        let header_label = gtk::Label::new(Some(&label));
-        let alignment = match column {
-            3 | 4 => gtk::Align::End,
-            5 | 6 => gtk::Align::Center,
-            _ => gtk::Align::Start,
-        };
-        header_label.add_css_class("heading");
-        header_label.set_halign(gtk::Align::Fill);
-        header_label.set_hexpand(true);
-        header_label.set_xalign(match alignment {
-            gtk::Align::End => 1.0,
-            gtk::Align::Center => 0.5,
-            _ => 0.0,
-        });
-        header_label.set_size_request(*width, -1);
-        header_label.set_margin_top(8);
-        header_label.set_margin_bottom(8);
-        header_label.set_tooltip_text(Some(&format!("Sort by {title}")));
+        let cell = storage_cell(column);
+        cell.set_margin_top(8);
+        cell.set_margin_bottom(8);
 
-        // A click gesture keeps the header text on the same alignment axis as data labels.
-        // Unlike GtkButton, GtkLabel adds no internal CSS padding around the title.
+        let header_label = gtk::Label::new(Some(&label));
+        header_label.add_css_class("heading");
+        header_label.set_hexpand(true);
+        header_label.set_halign(gtk::Align::Fill);
+        header_label.set_xalign(storage_column_alignment(column));
+        header_label.set_tooltip_text(Some(&format!("Sort by {title}")));
+        cell.append(&header_label);
+
+        // Sorting is attached to the shared cell so the clickable header uses
+        // exactly the same column width and alignment container as every data row.
         let table_weak = table_for_sort.downgrade();
         let status_weak = status_for_sort.downgrade();
         let sort_state = sort_state.clone();
@@ -572,9 +581,9 @@ fn append_storage_header(
                 refresh_storage(&table, &status, &sort_state);
             }
         });
-        header_label.add_controller(gesture);
+        cell.add_controller(gesture);
 
-        table.attach(&header_label, column as i32, 0, 1, 1);
+        table.attach(&cell, column as i32, 0, 1, 1);
     }
 }
 
@@ -634,19 +643,20 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
     let text_values = [path, kind, filesystem, size, available];
 
     for (column, value) in text_values.into_iter().enumerate() {
+        let cell = storage_cell(column);
+        cell.set_margin_top(8);
+        cell.set_margin_bottom(8);
+
         let label = gtk::Label::new(Some(&value));
-        let numeric = column == 3 || column == 4;
-        label.set_xalign(if numeric { 1.0 } else { 0.0 });
-        if numeric {
-            label.add_css_class("numeric");
-        }
-        label.set_size_request(STORAGE_COLUMNS[column].1, -1);
+        label.set_xalign(storage_column_alignment(column));
         label.set_halign(gtk::Align::Fill);
         label.set_hexpand(true);
         label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-        label.set_margin_top(8);
-        label.set_margin_bottom(8);
-        table.attach(&label, column as i32, row_index, 1, 1);
+        if column == 3 || column == 4 {
+            label.add_css_class("numeric");
+        }
+        cell.append(&label);
+        table.attach(&cell, column as i32, row_index, 1, 1);
     }
 
     let mountpoint_text = mountpoint.as_deref().unwrap_or("Not mounted");
@@ -665,13 +675,13 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
         "Mount information",
         &mount_description,
     );
-    mount_button.set_size_request(STORAGE_COLUMNS[5].1, -1);
-    mount_button.set_hexpand(true);
+    let mount_cell = storage_cell(5);
+    mount_cell.set_margin_top(4);
+    mount_cell.set_margin_bottom(4);
     mount_button.set_halign(gtk::Align::Center);
-    mount_button.set_margin_top(4);
-    mount_button.set_margin_bottom(4);
     mount_button.set_tooltip_text(Some(mountpoint_text));
-    table.attach(&mount_button, 5, row_index, 1, 1);
+    mount_cell.append(&mount_button);
+    table.attach(&mount_cell, 5, row_index, 1, 1);
 
     let explanation = destination_explanation(destination);
     let (status_icon, _status_css) = destination_icon(destination);
@@ -681,12 +691,12 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
         destination,
         explanation,
     );
-    status_button.set_size_request(STORAGE_COLUMNS[6].1, -1);
-    status_button.set_hexpand(true);
+    let destination_cell = storage_cell(6);
+    destination_cell.set_margin_top(4);
+    destination_cell.set_margin_bottom(4);
     status_button.set_halign(gtk::Align::Center);
-    status_button.set_margin_top(4);
-    status_button.set_margin_bottom(4);
-    table.attach(&status_button, 6, row_index, 1, 1);
+    destination_cell.append(&status_button);
+    table.attach(&destination_cell, 6, row_index, 1, 1);
 }
 
 fn make_detail_button(
