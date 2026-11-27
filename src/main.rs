@@ -560,11 +560,11 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
                 "Unsupported volume type" => {
                     "This block-device type is not eligible as a backup destination."
                 }
-                "Swap volume" => "Swap space is never a backup destination."
+                "Swap volume" => "Swap space is never a backup destination.",
                 "Boot/system partition" => {
                     "EFI, BIOS boot, reserved and swap partition types are excluded."
                 }
-                "Boot volume" => "Boot and EFI mount points are excluded from backup destinations."
+                "Boot volume" => "Boot and EFI mount points are excluded from backup destinations.",
                 "Volume container" => {
                     "This is a storage container or RAID/LUKS member, not a mounted data filesystem."
                 }
