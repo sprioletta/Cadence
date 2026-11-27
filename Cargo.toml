@@ -1,0 +1,10 @@
+[package]
+name = "cadence"
+version = "0.1.0"
+edition = "2024"
+description = "A modern Linux snapshot backup and restore application"
+license = "MIT"
+
+[dependencies]
+gtk = { package = "gtk4", version = "0.9" }
+adw = { package = "libadwaita", version = "0.7", features = ["v1_5"] }
