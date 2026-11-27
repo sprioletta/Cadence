@@ -20,7 +20,8 @@ struct BackupConfig {
     user_data_mode: String,
     user_selection_mode: String,
     selected_users: Vec<String>,
-    custom_exclusions: Vec<String>,
+    system_custom_exclusions: Vec<String>,
+    user_custom_exclusions: Vec<String>,
 }
 
 impl Default for BackupConfig {
@@ -31,7 +32,8 @@ impl Default for BackupConfig {
             user_data_mode: "all".to_string(),
             user_selection_mode: "all".to_string(),
             selected_users: Vec::new(),
-            custom_exclusions: Vec::new(),
+            system_custom_exclusions: Vec::new(),
+            user_custom_exclusions: Vec::new(),
         }
     }
 }
@@ -76,18 +78,24 @@ impl BackupConfig {
                     "selected".to_string()
                 }
             });
-        let custom_exclusions = backup
-            .get("exclusions")
+        let exclusions = backup.get("exclusions");
+        let legacy_custom_exclusions: Vec<String> = exclusions
             .and_then(|value| value.get("custom_paths"))
             .and_then(Value::as_array)
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .map(str::to_string)
-                    .collect()
-            })
+            .map(|items| items.iter().filter_map(Value::as_str).map(str::to_string).collect())
             .unwrap_or_default();
+        let parse_paths = |key: &str| {
+            exclusions
+                .and_then(|value| value.get(key))
+                .and_then(Value::as_array)
+                .map(|items| items.iter().filter_map(Value::as_str).map(str::to_string).collect::<Vec<_>>())
+        };
+        // Preserve legacy paths in both scopes until the user classifies them.
+        let system_custom_exclusions =
+            parse_paths("system_custom_paths").unwrap_or_else(|| legacy_custom_exclusions.clone());
+        let user_custom_exclusions =
+            parse_paths("user_custom_paths").unwrap_or(legacy_custom_exclusions);
+
         Self {
             system_enabled: backup
                 .get("system")
@@ -102,7 +110,8 @@ impl BackupConfig {
             user_data_mode,
             user_selection_mode,
             selected_users,
-            custom_exclusions,
+            system_custom_exclusions,
+            user_custom_exclusions,
         }
     }
 
@@ -122,7 +131,8 @@ impl BackupConfig {
             },
             "exclusions": {
                 "system_defaults": true,
-                "custom_paths": self.custom_exclusions
+                "system_custom_paths": self.system_custom_exclusions,
+                "user_custom_paths": self.user_custom_exclusions
             }
         })
     }
@@ -1524,6 +1534,121 @@ fn save_backup_config(config: &BackupConfig) -> Result<(), String> {
     Ok(())
 }
 
+
+const SYSTEM_DEFAULT_EXCLUSIONS: &[&str] = &[
+    "/dev", "/proc", "/sys", "/run", "/tmp", "/var/tmp", "/var/cache",
+];
+
+fn validate_exclusion_path(input: &str) -> Result<String, String> {
+    let path = input.trim();
+    if path.is_empty() || !Path::new(path).is_absolute() {
+        return Err("Enter an absolute path.".to_string());
+    }
+    let parsed = Path::new(path);
+    if parsed.components().any(|part| matches!(part, std::path::Component::ParentDir)) {
+        return Err("Parent-directory components (..) are not allowed.".to_string());
+    }
+    if parsed == Path::new("/") {
+        return Err("The filesystem root cannot be excluded.".to_string());
+    }
+    Ok(parsed.to_string_lossy().trim_end_matches('/').to_string())
+}
+
+fn make_exclusion_editor(
+    title: &str,
+    description: &str,
+    initial_paths: Vec<String>,
+    on_change: Rc<dyn Fn(Vec<String>)>,
+) -> gtk::Box {
+    let editor = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    let heading = gtk::Label::new(Some(title));
+    heading.add_css_class("heading");
+    heading.set_halign(gtk::Align::Start);
+    let help = gtk::Label::new(Some(description));
+    help.add_css_class("dim-label");
+    help.set_halign(gtk::Align::Start);
+    help.set_wrap(true);
+    let list = gtk::ListBox::new();
+    list.add_css_class("boxed-list");
+    list.set_selection_mode(gtk::SelectionMode::None);
+    let entry_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let entry = gtk::Entry::new();
+    entry.set_hexpand(true);
+    entry.set_placeholder_text(Some("/absolute/path/to/exclude"));
+    let add = gtk::Button::with_label("Add");
+    entry_row.append(&entry);
+    entry_row.append(&add);
+    let paths = Rc::new(RefCell::new(initial_paths));
+    let render: Rc<dyn Fn()> = {
+        let list = list.clone();
+        let paths = paths.clone();
+        let on_change = on_change.clone();
+        Rc::new(move || {
+            while let Some(child) = list.first_child() {
+                list.remove(&child);
+            }
+            for (index, path) in paths.borrow().iter().enumerate() {
+                let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                row.set_margin_top(6);
+                row.set_margin_bottom(6);
+                row.set_margin_start(10);
+                row.set_margin_end(10);
+                let label = gtk::Label::new(Some(path));
+                label.set_halign(gtk::Align::Start);
+                label.set_hexpand(true);
+                label.set_selectable(true);
+                label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+                let remove = gtk::Button::from_icon_name("user-trash-symbolic");
+                remove.set_tooltip_text(Some("Remove exclusion"));
+                let paths_for_remove = paths.clone();
+                let on_change_for_remove = on_change.clone();
+                let render_again = list.clone();
+                remove.connect_clicked(move |_| {
+                    let mut current = paths_for_remove.borrow_mut();
+                    if index < current.len() {
+                        current.remove(index);
+                    }
+                    let updated = current.clone();
+                    drop(current);
+                    on_change_for_remove(updated);
+                    while let Some(child) = render_again.first_child() {
+                        render_again.remove(&child);
+                    }
+                });
+                row.append(&label);
+                row.append(&remove);
+                list.append(&row);
+            }
+        })
+    };
+    render();
+    let paths_for_add = paths.clone();
+    let on_change_for_add = on_change.clone();
+    let entry_for_add = entry.clone();
+    let render_for_add = render.clone();
+    add.connect_clicked(move |_| match validate_exclusion_path(&entry_for_add.text()) {
+        Ok(path) => {
+            let mut current = paths_for_add.borrow_mut();
+            if !current.contains(&path) {
+                current.push(path);
+                current.sort();
+                let updated = current.clone();
+                drop(current);
+                on_change_for_add(updated);
+                render_for_add();
+            }
+            entry_for_add.set_text("");
+            entry_for_add.set_tooltip_text(None);
+        }
+        Err(error) => entry_for_add.set_tooltip_text(Some(&error)),
+    });
+    editor.append(&heading);
+    editor.append(&help);
+    editor.append(&list);
+    editor.append(&entry_row);
+    editor
+}
+
 fn make_settings_page() -> gtk::Box {
     let page = gtk::Box::new(gtk::Orientation::Vertical, 18);
     page.set_hexpand(true);
@@ -1679,6 +1804,72 @@ fn make_settings_page() -> gtk::Box {
     mode_box.append(&mode);
     mode_card.set_child(Some(&mode_box));
 
+    let system_exclusion_card = gtk::Frame::new(None);
+    system_exclusion_card.add_css_class("card");
+    let system_exclusion_box = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    system_exclusion_box.set_margin_top(16);
+    system_exclusion_box.set_margin_bottom(16);
+    system_exclusion_box.set_margin_start(18);
+    system_exclusion_box.set_margin_end(18);
+    let defaults_heading = gtk::Label::new(Some("Built-in system exclusions"));
+    defaults_heading.add_css_class("heading");
+    defaults_heading.set_halign(gtk::Align::Start);
+    let defaults_help = gtk::Label::new(Some(
+        "Virtual and temporary filesystem paths always excluded from system backups.",
+    ));
+    defaults_help.add_css_class("dim-label");
+    defaults_help.set_halign(gtk::Align::Start);
+    defaults_help.set_wrap(true);
+    let defaults_list = gtk::Label::new(Some(&SYSTEM_DEFAULT_EXCLUSIONS.join("\n")));
+    defaults_list.set_halign(gtk::Align::Start);
+    defaults_list.set_xalign(0.0);
+    defaults_list.set_selectable(true);
+    system_exclusion_box.append(&defaults_heading);
+    system_exclusion_box.append(&defaults_help);
+    system_exclusion_box.append(&defaults_list);
+    let config_for_system_exclusions = config.clone();
+    let status_for_system_exclusions = status.clone();
+    let system_editor = make_exclusion_editor(
+        "Additional system exclusions",
+        "Absolute paths excluded only from system-file backups.",
+        config.borrow().system_custom_exclusions.clone(),
+        Rc::new(move |paths| {
+            let mut current = config_for_system_exclusions.borrow_mut();
+            current.system_custom_exclusions = paths;
+            match save_backup_config(&current) {
+                Ok(()) => status_for_system_exclusions.set_text("Backup settings saved."),
+                Err(error) => status_for_system_exclusions.set_text(&format!("Could not save settings: {error}")),
+            }
+        }),
+    );
+    system_exclusion_box.append(&system_editor);
+    system_exclusion_card.set_child(Some(&system_exclusion_box));
+
+    let user_exclusion_card = gtk::Frame::new(None);
+    user_exclusion_card.add_css_class("card");
+    let user_exclusion_box = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    user_exclusion_box.set_margin_top(16);
+    user_exclusion_box.set_margin_bottom(16);
+    user_exclusion_box.set_margin_start(18);
+    user_exclusion_box.set_margin_end(18);
+    let config_for_user_exclusions = config.clone();
+    let status_for_user_exclusions = status.clone();
+    let user_editor = make_exclusion_editor(
+        "User-data exclusions",
+        "Absolute paths excluded from selected users' data backups.",
+        config.borrow().user_custom_exclusions.clone(),
+        Rc::new(move |paths| {
+            let mut current = config_for_user_exclusions.borrow_mut();
+            current.user_custom_exclusions = paths;
+            match save_backup_config(&current) {
+                Ok(()) => status_for_user_exclusions.set_text("Backup settings saved."),
+                Err(error) => status_for_user_exclusions.set_text(&format!("Could not save settings: {error}")),
+            }
+        }),
+    );
+    user_exclusion_box.append(&user_editor);
+    user_exclusion_card.set_child(Some(&user_exclusion_box));
+
     let config_for_system = config.clone();
     let status_for_system = status.clone();
     system_check.connect_toggled(move |button| {
@@ -1729,6 +1920,8 @@ fn make_settings_page() -> gtk::Box {
     page.append(&content_card);
     page.append(&user_card);
     page.append(&mode_card);
+    page.append(&system_exclusion_card);
+    page.append(&user_exclusion_card);
     page.append(&status);
     page
 }
@@ -1909,6 +2102,37 @@ mod tests {
         assert_eq!(config.user_selection_mode, "selected");
         assert!(config.selected_users.is_empty());
         assert_eq!(config.to_json()["user_data"]["selection_mode"], "selected");
+    }
+
+
+    #[test]
+    fn legacy_custom_exclusions_migrate_to_both_scopes() {
+        let value = serde_json::json!({"backup":{"exclusions":{"custom_paths":["/var/lib/example","/home/alice/cache"]}}});
+        let config = BackupConfig::from_json(&value);
+        assert_eq!(config.system_custom_exclusions, vec!["/var/lib/example", "/home/alice/cache"]);
+        assert_eq!(config.user_custom_exclusions, vec!["/var/lib/example", "/home/alice/cache"]);
+    }
+
+    #[test]
+    fn scoped_exclusions_round_trip_independently() {
+        let value = serde_json::json!({"backup":{"exclusions":{
+            "system_custom_paths":["/var/log/private"],
+            "user_custom_paths":["/home/alice/Downloads"]
+        }}});
+        let config = BackupConfig::from_json(&value);
+        assert_eq!(config.system_custom_exclusions, vec!["/var/log/private"]);
+        assert_eq!(config.user_custom_exclusions, vec!["/home/alice/Downloads"]);
+        let serialized = config.to_json();
+        assert_eq!(serialized["exclusions"]["system_custom_paths"][0], "/var/log/private");
+        assert_eq!(serialized["exclusions"]["user_custom_paths"][0], "/home/alice/Downloads");
+    }
+
+    #[test]
+    fn exclusion_paths_must_be_absolute_and_cannot_escape_root() {
+        assert!(validate_exclusion_path("relative/path").is_err());
+        assert!(validate_exclusion_path("/var/../etc").is_err());
+        assert!(validate_exclusion_path("/").is_err());
+        assert_eq!(validate_exclusion_path("/var/cache/").unwrap(), "/var/cache");
     }
 
     #[test]
