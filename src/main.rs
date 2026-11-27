@@ -1,7 +1,6 @@
 use adw::prelude::*;
 use serde_json::Value;
 use std::cell::RefCell;
-use std::path::Path;
 use std::process::Command;
 use std::rc::Rc;
 
@@ -350,7 +349,11 @@ fn refresh_storage(
     if let Some((column, ascending)) = sort {
         devices.sort_by(|left, right| {
             let ordering = compare_device_values(left, right, column);
-            let ordering = if ascending { ordering } else { ordering.reverse() };
+            let ordering = if ascending {
+                ordering
+            } else {
+                ordering.reverse()
+            };
             ordering.then_with(|| compare_device_values(left, right, 0))
         });
     }
@@ -768,9 +771,7 @@ fn destination_explanation(status: &str) -> &'static str {
         }
         "Check free space" => "Available space could not be determined.",
         "Mount not verified" => "The mount status could not be verified.",
-        "Mount mode unknown" => {
-            "The mount options do not clearly indicate read-write access."
-        }
+        "Mount mode unknown" => "The mount options do not clearly indicate read-write access.",
         "No free space" => "The filesystem reports no available space.",
         "Read-only" => "The filesystem is mounted read-only.",
         _ => "The filesystem is not mounted.",
