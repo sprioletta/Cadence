@@ -104,6 +104,9 @@ fn build_ui(application: &adw::Application) {
     let content = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     content.set_hexpand(true);
     content.set_vexpand(true);
+    // Keep the window large enough for the sidebar and the widest tab content.
+    // The window remains resizable, but cannot be shrunk until its tabs are clipped.
+    content.set_size_request(1080, 560);
     content.append(&sidebar);
     content.append(&separator);
     content.append(&stack);
