@@ -24,17 +24,23 @@ fn build_ui(application: &adw::Application) {
         .build();
 
     stack.add_named(&make_overview_page(), Some("overview"));
-    stack.add_named(&make_page(
-        "document-save-symbolic",
-        "Snapshots",
-        "Browse and manage your system snapshots.",
-    ), Some("snapshots"));
+    stack.add_named(
+        &make_page(
+            "document-save-symbolic",
+            "Snapshots",
+            "Browse and manage your system snapshots.",
+        ),
+        Some("snapshots"),
+    );
     stack.add_named(&make_storage_page(), Some("storage"));
-    stack.add_named(&make_page(
-        "preferences-system-symbolic",
-        "Settings",
-        "Configure Cadence preferences.",
-    ), Some("settings"));
+    stack.add_named(
+        &make_page(
+            "preferences-system-symbolic",
+            "Settings",
+            "Configure Cadence preferences.",
+        ),
+        Some("settings"),
+    );
     stack.set_visible_child_name("overview");
 
     let sidebar = gtk::Box::new(gtk::Orientation::Vertical, 6);
@@ -47,19 +53,40 @@ fn build_ui(application: &adw::Application) {
     sidebar.set_margin_end(12);
 
     let overview_button = add_nav_button(
-        &sidebar, &stack, None, "Overview", "overview", "go-home-symbolic", true,
+        &sidebar,
+        &stack,
+        None,
+        "Overview",
+        "overview",
+        "go-home-symbolic",
+        true,
     );
     add_nav_button(
-        &sidebar, &stack, Some(&overview_button), "Snapshots", "snapshots",
-        "document-save-symbolic", false,
+        &sidebar,
+        &stack,
+        Some(&overview_button),
+        "Snapshots",
+        "snapshots",
+        "document-save-symbolic",
+        false,
     );
     add_nav_button(
-        &sidebar, &stack, Some(&overview_button), "Storage", "storage",
-        "drive-removable-media-symbolic", false,
+        &sidebar,
+        &stack,
+        Some(&overview_button),
+        "Storage",
+        "storage",
+        "drive-removable-media-symbolic",
+        false,
     );
     add_nav_button(
-        &sidebar, &stack, Some(&overview_button), "Settings", "settings",
-        "preferences-system-symbolic", false,
+        &sidebar,
+        &stack,
+        Some(&overview_button),
+        "Settings",
+        "settings",
+        "preferences-system-symbolic",
+        false,
     );
 
     let separator = gtk::Separator::new(gtk::Orientation::Vertical);
@@ -112,22 +139,54 @@ fn make_overview_page() -> gtk::Box {
         .hexpand(true)
         .build();
 
-    grid.attach(&make_summary_card(
-        "drive-harddisk-symbolic", "Backup destination", "Not configured",
-        "Choose a destination to store your snapshots.",
-    ), 0, 0, 1, 1);
-    grid.attach(&make_summary_card(
-        "camera-photo-symbolic", "Latest snapshot", "No snapshots yet",
-        "Your most recent snapshot will appear here.",
-    ), 1, 0, 1, 1);
-    grid.attach(&make_summary_card(
-        "drive-removable-media-symbolic", "Storage", "Not available",
-        "Storage capacity will be shown when a destination is configured.",
-    ), 0, 1, 1, 1);
-    grid.attach(&make_summary_card(
-        "document-save-symbolic", "Last backup", "Never",
-        "The date of your last completed backup will appear here.",
-    ), 1, 1, 1, 1);
+    grid.attach(
+        &make_summary_card(
+            "drive-harddisk-symbolic",
+            "Backup destination",
+            "Not configured",
+            "Choose a destination to store your snapshots.",
+        ),
+        0,
+        0,
+        1,
+        1,
+    );
+    grid.attach(
+        &make_summary_card(
+            "camera-photo-symbolic",
+            "Latest snapshot",
+            "No snapshots yet",
+            "Your most recent snapshot will appear here.",
+        ),
+        1,
+        0,
+        1,
+        1,
+    );
+    grid.attach(
+        &make_summary_card(
+            "drive-removable-media-symbolic",
+            "Storage",
+            "Not available",
+            "Storage capacity will be shown when a destination is configured.",
+        ),
+        0,
+        1,
+        1,
+        1,
+    );
+    grid.attach(
+        &make_summary_card(
+            "document-save-symbolic",
+            "Last backup",
+            "Never",
+            "The date of your last completed backup will appear here.",
+        ),
+        1,
+        1,
+        1,
+        1,
+    );
 
     page.append(&heading);
     page.append(&subtitle);
@@ -176,7 +235,14 @@ fn make_storage_page() -> gtk::Box {
     column_header.set_margin_end(12);
     column_header.set_margin_top(8);
     column_header.set_margin_bottom(8);
-    for title in ["Device", "Type", "Filesystem", "Size", "Available", "Mounted at"] {
+    for title in [
+        "Device",
+        "Type",
+        "Filesystem",
+        "Size",
+        "Available",
+        "Mounted at",
+    ] {
         let label = gtk::Label::new(Some(title));
         label.add_css_class("caption");
         label.add_css_class("dim-label");
@@ -225,7 +291,10 @@ fn refresh_storage(list: &gtk::ListBox, status: &gtk::Label) {
         Ok(output) if output.status.success() => output,
         Ok(output) => {
             let error = String::from_utf8_lossy(&output.stderr);
-            status.set_text(&format!("Could not inspect storage devices: {}", error.trim()));
+            status.set_text(&format!(
+                "Could not inspect storage devices: {}",
+                error.trim()
+            ));
             return;
         }
         Err(error) => {
@@ -284,15 +353,32 @@ fn make_device_row(device: &Value) -> gtk::ListBoxRow {
         .unwrap_or_else(|| "Unknown".to_string());
     let kind = json_text(device, "type").unwrap_or_else(|| "—".to_string());
     let filesystem = json_text(device, "fstype").unwrap_or_else(|| "—".to_string());
-    let size = device.get("size").and_then(Value::as_u64)
-        .map(format_bytes).unwrap_or_else(|| "—".to_string());
-    let available = device.get("fsavail").and_then(Value::as_u64)
-        .map(format_bytes).unwrap_or_else(|| "—".to_string());
-    let mountpoint = device.get("mountpoints")
+    let size = device
+        .get("size")
+        .and_then(Value::as_u64)
+        .map(format_bytes)
+        .unwrap_or_else(|| "—".to_string());
+    let available = device
+        .get("fsavail")
+        .and_then(Value::as_u64)
+        .map(format_bytes)
+        .unwrap_or_else(|| "—".to_string());
+    let mountpoint = device
+        .get("mountpoints")
         .and_then(Value::as_array)
-        .and_then(|points| points.iter().filter_map(Value::as_str).find(|point| !point.is_empty()))
+        .and_then(|points| {
+            points
+                .iter()
+                .filter_map(Value::as_str)
+                .find(|point| !point.is_empty())
+        })
         .map(str::to_string)
-        .or_else(|| device.get("mountpoints").and_then(Value::as_str).map(str::to_string))
+        .or_else(|| {
+            device
+                .get("mountpoints")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
         .unwrap_or_else(|| "—".to_string());
 
     for (value, width) in [
