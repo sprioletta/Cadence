@@ -21,14 +21,7 @@ fn build_ui(application: &adw::Application) {
         .transition_duration(180)
         .build();
 
-    stack.add_named(
-        &make_page(
-            "drive-harddisk-symbolic",
-            "Welcome to Cadence",
-            "Your backup destinations and snapshots will appear here.",
-        ),
-        Some("overview"),
-    );
+    stack.add_named(&make_overview_page(), Some("overview"));
 
     stack.add_named(
         &make_page(
@@ -57,7 +50,6 @@ fn build_ui(application: &adw::Application) {
         Some("settings"),
     );
 
-    // Always start on Overview, regardless of GTK Stack's child insertion state.
     stack.set_visible_child_name("overview");
 
     let sidebar = gtk::Box::new(gtk::Orientation::Vertical, 6);
@@ -129,6 +121,133 @@ fn build_ui(application: &adw::Application) {
         .build();
 
     window.present();
+}
+
+fn make_overview_page() -> gtk::Box {
+    let page = gtk::Box::new(gtk::Orientation::Vertical, 20);
+    page.set_hexpand(true);
+    page.set_vexpand(true);
+    page.set_margin_top(32);
+    page.set_margin_bottom(32);
+    page.set_margin_start(32);
+    page.set_margin_end(32);
+
+    let heading = gtk::Label::new(Some("System overview"));
+    heading.add_css_class("title-1");
+    heading.set_halign(gtk::Align::Start);
+
+    let subtitle = gtk::Label::new(Some(
+        "A summary of your backup destination and snapshot status.",
+    ));
+    subtitle.add_css_class("dim-label");
+    subtitle.set_halign(gtk::Align::Start);
+    subtitle.set_wrap(true);
+
+    let grid = gtk::Grid::builder()
+        .column_spacing(18)
+        .row_spacing(18)
+        .column_homogeneous(true)
+        .hexpand(true)
+        .build();
+
+    grid.attach(
+        &make_summary_card(
+            "drive-harddisk-symbolic",
+            "Backup destination",
+            "Not configured",
+            "Choose a destination to store your snapshots.",
+        ),
+        0,
+        0,
+        1,
+        1,
+    );
+
+    grid.attach(
+        &make_summary_card(
+            "camera-photo-symbolic",
+            "Latest snapshot",
+            "No snapshots yet",
+            "Your most recent snapshot will appear here.",
+        ),
+        1,
+        0,
+        1,
+        1,
+    );
+
+    grid.attach(
+        &make_summary_card(
+            "drive-removable-media-symbolic",
+            "Storage",
+            "Not available",
+            "Storage capacity will be shown when a destination is configured.",
+        ),
+        0,
+        1,
+        1,
+        1,
+    );
+
+    grid.attach(
+        &make_summary_card(
+            "document-save-symbolic",
+            "Last backup",
+            "Never",
+            "The date of your last completed backup will appear here.",
+        ),
+        1,
+        1,
+        1,
+        1,
+    );
+
+    page.append(&heading);
+    page.append(&subtitle);
+    page.append(&grid);
+
+    page
+}
+
+fn make_summary_card(icon_name: &str, title: &str, value: &str, description: &str) -> gtk::Frame {
+    let frame = gtk::Frame::new(None);
+    frame.add_css_class("card");
+    frame.set_hexpand(true);
+
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    content.set_margin_top(20);
+    content.set_margin_bottom(20);
+    content.set_margin_start(20);
+    content.set_margin_end(20);
+
+    let header = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    let icon = gtk::Image::from_icon_name(icon_name);
+    icon.set_pixel_size(20);
+
+    let title_label = gtk::Label::new(Some(title));
+    title_label.add_css_class("heading");
+    title_label.set_halign(gtk::Align::Start);
+
+    header.append(&icon);
+    header.append(&title_label);
+
+    let value_label = gtk::Label::new(Some(value));
+    value_label.add_css_class("title-2");
+    value_label.set_halign(gtk::Align::Start);
+    value_label.set_wrap(true);
+
+    let description_label = gtk::Label::new(Some(description));
+    description_label.add_css_class("dim-label");
+    description_label.set_halign(gtk::Align::Start);
+    description_label.set_wrap(true);
+    description_label.set_xalign(0.0);
+
+    content.append(&header);
+    content.append(&value_label);
+    content.append(&description_label);
+    frame.set_child(Some(&content));
+
+    frame
 }
 
 fn make_page(icon: &str, title: &str, description: &str) -> adw::StatusPage {
