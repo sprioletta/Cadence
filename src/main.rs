@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::path::Path;
 use std::process::Command;
 
-const STORAGE_COLUMNS: [(&str, i32); 6] = [
+const STORAGE_COLUMNS: [(&str, i32); 7] = [
     ("Device", 132),
     ("Type", 60),
     ("Filesystem", 90),
@@ -346,7 +346,13 @@ fn destination_status(device: &Value) -> &'static str {
 
 fn mount_options_for(mountpoint: &str) -> Option<String> {
     let output = Command::new("findmnt")
-        .args(["--noheadings", "--output", "OPTIONS", "--target", mountpoint])
+        .args([
+            "--noheadings",
+            "--output",
+            "OPTIONS",
+            "--target",
+            mountpoint,
+        ])
         .output()
         .ok()?;
 
@@ -632,7 +638,7 @@ mod tests {
     #[test]
     fn destination_requires_a_mountpoint() {
         assert_eq!(
-            assess_destination(Some("ext4"), None, None, None, None),
+            assess_destination(None, None, None, None, None),
             "Not mounted"
         );
     }
@@ -640,7 +646,13 @@ mod tests {
     #[test]
     fn system_root_is_not_a_backup_destination() {
         assert_eq!(
-            assess_destination(Some("ext4"), Some("/"), Some("rw,relatime"), Some(true), Some(10)),
+            assess_destination(
+                Some("ext4"),
+                Some("/"),
+                Some("rw,relatime"),
+                Some(true),
+                Some(1_000_000_000),
+            ),
             "System root"
         );
     }
@@ -648,7 +660,13 @@ mod tests {
     #[test]
     fn read_only_mount_is_rejected() {
         assert_eq!(
-            assess_destination(Some("ext4"), Some("/mnt/backup"), Some("ro,relatime"), Some(false), Some(10)),
+            assess_destination(
+                Some("ext4"),
+                Some("/mnt/backup"),
+                Some("ro,relatime"),
+                Some(false),
+                Some(1_000_000_000),
+            ),
             "Read-only"
         );
     }
@@ -656,7 +674,13 @@ mod tests {
     #[test]
     fn destination_requires_write_access() {
         assert_eq!(
-            assess_destination(Some("ext4"), Some("/mnt/backup"), Some("rw,relatime"), Some(false), Some(10)),
+            assess_destination(
+                Some("ext4"),
+                Some("/mnt/backup"),
+                Some("rw,relatime"),
+                Some(false),
+                Some(1_000_000_000),
+            ),
             "No write access"
         );
     }
@@ -664,7 +688,13 @@ mod tests {
     #[test]
     fn unknown_filesystems_require_verification() {
         assert_eq!(
-            assess_destination(Some("exfat"), Some("/mnt/backup"), Some("rw,relatime"), Some(true), Some(10)),
+            assess_destination(
+                Some("exfat"),
+                Some("/mnt/backup"),
+                Some("rw,relatime"),
+                Some(true),
+                Some(1_000_000_000),
+            ),
             "Verify filesystem"
         );
     }
@@ -672,7 +702,13 @@ mod tests {
     #[test]
     fn destination_without_reported_space_is_not_confirmed() {
         assert_eq!(
-            assess_destination(Some("ext4"), Some("/mnt/backup"), Some("rw,relatime"), Some(true), None),
+            assess_destination(
+                Some("ext4"),
+                Some("/mnt/backup"),
+                Some("rw,relatime"),
+                Some(true),
+                None,
+            ),
             "Check free space"
         );
     }
@@ -680,8 +716,42 @@ mod tests {
     #[test]
     fn writable_linux_filesystem_with_space_is_a_candidate() {
         assert_eq!(
-            assess_destination(Some("ext4"), Some("/mnt/backup"), Some("rw,relatime"), Some(true), Some(10)),
+            assess_destination(
+                Some("ext4"),
+                Some("/mnt/backup"),
+                Some("rw,relatime"),
+                Some(true),
+                Some(1_000_000_000),
+            ),
             "Candidate"
+        );
+    }
+
+    #[test]
+    fn zero_available_space_is_rejected() {
+        assert_eq!(
+            assess_destination(
+                Some("ext4"),
+                Some("/mnt/backup"),
+                Some("rw,relatime"),
+                Some(true),
+                Some(0),
+            ),
+            "No free space"
+        );
+    }
+
+    #[test]
+    fn unknown_mount_mode_is_not_accepted() {
+        assert_eq!(
+            assess_destination(
+                Some("ext4"),
+                Some("/mnt/backup"),
+                Some("relatime"),
+                Some(true),
+                Some(1_000_000_000),
+            ),
+            "Mount mode unknown"
         );
     }
 }
