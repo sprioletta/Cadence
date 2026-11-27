@@ -84,13 +84,25 @@ impl BackupConfig {
         let legacy_custom_exclusions: Vec<String> = exclusions
             .and_then(|value| value.get("custom_paths"))
             .and_then(Value::as_array)
-            .map(|items| items.iter().filter_map(Value::as_str).map(str::to_string).collect())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
             .unwrap_or_default();
         let parse_paths = |key: &str| {
             exclusions
                 .and_then(|value| value.get(key))
                 .and_then(Value::as_array)
-                .map(|items| items.iter().filter_map(Value::as_str).map(str::to_string).collect::<Vec<_>>())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_string)
+                        .collect::<Vec<_>>()
+                })
         };
         // Preserve legacy paths in both scopes until the user classifies them.
         let system_custom_exclusions =
@@ -1502,7 +1514,6 @@ fn make_summary_card(icon_name: &str, title: &str, value: &str, description: &st
     frame
 }
 
-
 fn load_backup_config() -> BackupConfig {
     fs::read_to_string(destination_config_file())
         .ok()
@@ -1536,9 +1547,14 @@ fn save_backup_config(config: &BackupConfig) -> Result<(), String> {
     Ok(())
 }
 
-
 const SYSTEM_DEFAULT_EXCLUSIONS: &[&str] = &[
-    "/dev", "/proc", "/sys", "/run", "/tmp", "/var/tmp", "/var/cache",
+    "/dev",
+    "/proc",
+    "/sys",
+    "/run",
+    "/tmp",
+    "/var/tmp",
+    "/var/cache",
 ];
 
 fn validate_exclusion_path(input: &str) -> Result<String, String> {
@@ -1547,7 +1563,10 @@ fn validate_exclusion_path(input: &str) -> Result<String, String> {
         return Err("Enter an absolute path.".to_string());
     }
     let parsed = Path::new(path);
-    if parsed.components().any(|part| matches!(part, std::path::Component::ParentDir)) {
+    if parsed
+        .components()
+        .any(|part| matches!(part, std::path::Component::ParentDir))
+    {
         return Err("Parent-directory components (..) are not allowed.".to_string());
     }
     if parsed == Path::new("/") {
@@ -1633,22 +1652,24 @@ fn make_exclusion_editor(
     let on_change_for_add = on_change.clone();
     let entry_for_add = entry.clone();
     let render_for_add = render.clone();
-    add.connect_clicked(move |_| match validate_exclusion_path(&entry_for_add.text()) {
-        Ok(path) => {
-            let mut current = paths_for_add.borrow_mut();
-            if !current.contains(&path) {
-                current.push(path);
-                current.sort();
-                let updated = current.clone();
-                drop(current);
-                on_change_for_add(updated);
-                render_for_add();
+    add.connect_clicked(
+        move |_| match validate_exclusion_path(&entry_for_add.text()) {
+            Ok(path) => {
+                let mut current = paths_for_add.borrow_mut();
+                if !current.contains(&path) {
+                    current.push(path);
+                    current.sort();
+                    let updated = current.clone();
+                    drop(current);
+                    on_change_for_add(updated);
+                    render_for_add();
+                }
+                entry_for_add.set_text("");
+                entry_for_add.set_tooltip_text(None);
             }
-            entry_for_add.set_text("");
-            entry_for_add.set_tooltip_text(None);
-        }
-        Err(error) => entry_for_add.set_tooltip_text(Some(&error)),
-    });
+            Err(error) => entry_for_add.set_tooltip_text(Some(&error)),
+        },
+    );
     editor.append(&heading);
     editor.append(&help);
     editor.append(&list);
@@ -1739,10 +1760,8 @@ fn make_settings_page() -> gtk::Box {
                     current.user_selection_mode == "all"
                         || current.selected_users.iter().any(|path| path == &home)
                 };
-                let check = gtk::CheckButton::with_label(&format!(
-                    "{}  —  {}",
-                    user.username, home
-                ));
+                let check =
+                    gtk::CheckButton::with_label(&format!("{}  —  {}", user.username, home));
                 check.set_active(selected);
                 let config_for_user = config.clone();
                 let status_for_user = status.clone();
@@ -1764,8 +1783,9 @@ fn make_settings_page() -> gtk::Box {
                     current.selected_users.dedup();
                     match save_backup_config(&current) {
                         Ok(()) => status_for_user.set_text("Backup settings saved."),
-                        Err(error) => status_for_user
-                            .set_text(&format!("Could not save settings: {error}")),
+                        Err(error) => {
+                            status_for_user.set_text(&format!("Could not save settings: {error}"))
+                        }
                     }
                 });
                 accounts_box.append(&check);
@@ -1845,7 +1865,8 @@ fn make_settings_page() -> gtk::Box {
             current.system_custom_exclusions = paths;
             match save_backup_config(&current) {
                 Ok(()) => status_for_system_exclusions.set_text("Backup settings saved."),
-                Err(error) => status_for_system_exclusions.set_text(&format!("Could not save settings: {error}")),
+                Err(error) => status_for_system_exclusions
+                    .set_text(&format!("Could not save settings: {error}")),
             }
         }),
     );
@@ -1870,7 +1891,8 @@ fn make_settings_page() -> gtk::Box {
             current.user_custom_exclusions = paths;
             match save_backup_config(&current) {
                 Ok(()) => status_for_user_exclusions.set_text("Backup settings saved."),
-                Err(error) => status_for_user_exclusions.set_text(&format!("Could not save settings: {error}")),
+                Err(error) => status_for_user_exclusions
+                    .set_text(&format!("Could not save settings: {error}")),
             }
         }),
     );
@@ -1884,9 +1906,7 @@ fn make_settings_page() -> gtk::Box {
         current.system_enabled = button.is_active();
         match save_backup_config(&current) {
             Ok(()) => status_for_system.set_text("Backup settings saved."),
-            Err(error) => {
-                status_for_system.set_text(&format!("Could not save settings: {error}"))
-            }
+            Err(error) => status_for_system.set_text(&format!("Could not save settings: {error}")),
         }
     });
 
@@ -1916,9 +1936,7 @@ fn make_settings_page() -> gtk::Box {
         current.user_data_mode = mode_id.to_string();
         match save_backup_config(&current) {
             Ok(()) => status_for_mode.set_text("Backup settings saved."),
-            Err(error) => {
-                status_for_mode.set_text(&format!("Could not save settings: {error}"))
-            }
+            Err(error) => status_for_mode.set_text(&format!("Could not save settings: {error}")),
         }
     });
 
@@ -1981,7 +1999,10 @@ fn add_nav_button(
 
 #[cfg(test)]
 mod tests {
-    use super::{BackupConfig, assess_destination, destination_from_json, destination_path_for};
+    use super::{
+        BackupConfig, assess_destination, destination_from_json, destination_path_for,
+        validate_exclusion_path,
+    };
 
     fn assess(
         device_type: Option<&str>,
@@ -2111,13 +2132,18 @@ mod tests {
         assert_eq!(config.to_json()["user_data"]["selection_mode"], "selected");
     }
 
-
     #[test]
     fn legacy_custom_exclusions_migrate_to_both_scopes() {
         let value = serde_json::json!({"backup":{"exclusions":{"custom_paths":["/var/lib/example","/home/alice/cache"]}}});
         let config = BackupConfig::from_json(&value);
-        assert_eq!(config.system_custom_exclusions, vec!["/var/lib/example", "/home/alice/cache"]);
-        assert_eq!(config.user_custom_exclusions, vec!["/var/lib/example", "/home/alice/cache"]);
+        assert_eq!(
+            config.system_custom_exclusions,
+            vec!["/var/lib/example", "/home/alice/cache"]
+        );
+        assert_eq!(
+            config.user_custom_exclusions,
+            vec!["/var/lib/example", "/home/alice/cache"]
+        );
     }
 
     #[test]
@@ -2130,8 +2156,14 @@ mod tests {
         assert_eq!(config.system_custom_exclusions, vec!["/var/log/private"]);
         assert_eq!(config.user_custom_exclusions, vec!["/home/alice/Downloads"]);
         let serialized = config.to_json();
-        assert_eq!(serialized["exclusions"]["system_custom_paths"][0], "/var/log/private");
-        assert_eq!(serialized["exclusions"]["user_custom_paths"][0], "/home/alice/Downloads");
+        assert_eq!(
+            serialized["exclusions"]["system_custom_paths"][0],
+            "/var/log/private"
+        );
+        assert_eq!(
+            serialized["exclusions"]["user_custom_paths"][0],
+            "/home/alice/Downloads"
+        );
     }
 
     #[test]
@@ -2139,7 +2171,10 @@ mod tests {
         assert!(validate_exclusion_path("relative/path").is_err());
         assert!(validate_exclusion_path("/var/../etc").is_err());
         assert!(validate_exclusion_path("/").is_err());
-        assert_eq!(validate_exclusion_path("/var/cache/").unwrap(), "/var/cache");
+        assert_eq!(
+            validate_exclusion_path("/var/cache/").unwrap(),
+            "/var/cache"
+        );
     }
 
     #[test]
