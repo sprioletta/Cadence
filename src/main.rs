@@ -948,6 +948,7 @@ fn append_device_row(
         .map(format_gigabytes)
         .unwrap_or_else(|| "—".to_string());
     let mountpoint = device_mountpoint(device);
+    let assessment = destination_status(device);
     let selected_config = destination_config.borrow();
     let selected = mountpoint
         .as_deref()
@@ -968,7 +969,7 @@ fn append_device_row(
             },
         }
     } else {
-        destination_status(device)
+        assessment
     };
     drop(selected_config);
 
@@ -1028,7 +1029,7 @@ fn append_device_row(
     destination_cell.set_margin_bottom(4);
     status_button.set_halign(gtk::Align::Start);
     destination_cell.append(&status_button);
-    let eligible = destination_status(device) == "Potential device";
+    let eligible = assessment == "Potential device";
     if eligible && destination != "Selected" {
         if let (Some(mountpoint), Some(uuid)) = (mountpoint, json_text(device, "uuid")) {
             let select = gtk::Button::with_label("Use");
