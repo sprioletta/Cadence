@@ -276,7 +276,7 @@ fn refresh_storage(table: &gtk::Grid, status: &gtk::Label) {
             "--json",
             "--bytes",
             "--output",
-            "NAME,PATH,TYPE,FSTYPE,SIZE,FSAVAIL,FSUSE%,MOUNTPOINTS,MODEL",
+            "NAME,PATH,TYPE,FSTYPE,PARTTYPE,PARTLABEL,SIZE,FSAVAIL,FSUSE%,MOUNTPOINTS,MODEL",
         ])
         .output();
 
@@ -326,20 +326,21 @@ fn refresh_storage(table: &gtk::Grid, status: &gtk::Label) {
 }
 
 fn destination_status(device: &Value) -> &'static str {
-    let Some(mountpoint) = device_mountpoint(device) else {
-        return "Not mounted";
-    };
-
+    let kind = json_text(device, "type");
     let filesystem = json_text(device, "fstype");
-    let mount_options = mount_options_for(&mountpoint);
-    let writable = write_access_for(&mountpoint);
+    let partition_type = json_text(device, "parttype");
+    let partition_label = json_text(device, "partlabel");
+    let mountpoint = device_mountpoint(device);
+    let mount_options = mountpoint.as_deref().and_then(mount_options_for);
     let available_bytes = device.get("fsavail").and_then(Value::as_u64);
 
     assess_destination(
+        kind.as_deref(),
         filesystem.as_deref(),
-        Some(&mountpoint),
+        partition_type.as_deref(),
+        partition_label.as_deref(),
+        mountpoint.as_deref(),
         mount_options.as_deref(),
-        writable,
         available_bytes,
     )
 }
@@ -364,28 +365,58 @@ fn mount_options_for(mountpoint: &str) -> Option<String> {
     (!options.is_empty()).then_some(options)
 }
 
-fn write_access_for(mountpoint: &str) -> Option<bool> {
-    Command::new("test")
-        .arg("-w")
-        .arg(mountpoint)
-        .status()
-        .ok()
-        .map(|status| status.success())
-}
-
 fn assess_destination(
+    device_type: Option<&str>,
     filesystem: Option<&str>,
+    partition_type: Option<&str>,
+    partition_label: Option<&str>,
     mountpoint: Option<&str>,
     mount_options: Option<&str>,
-    writable: Option<bool>,
     available_bytes: Option<u64>,
 ) -> &'static str {
+    let device_type = device_type.unwrap_or_default().to_ascii_lowercase();
+    if !matches!(device_type.as_str(), "disk" | "part" | "lvm" | "crypt") {
+        return "Unsupported volume type";
+    }
+
+    let filesystem = filesystem.unwrap_or_default().to_ascii_lowercase();
+    if filesystem == "swap" {
+        return "Swap volume";
+    }
+
+    let partition_type = partition_type.unwrap_or_default().to_ascii_lowercase();
+    let partition_label = partition_label.unwrap_or_default().to_ascii_lowercase();
+    if partition_type == "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
+        || partition_label.contains("efi system")
+        || partition_label.contains("bios boot")
+        || partition_label.contains("system reserved")
+        || partition_type == "21686148-6449-6e6f-744e-656564454649"
+        || partition_type == "e3c9e316-0b5c-4db8-817d-f92df00215ae"
+        || partition_type == "0657fd6d-a4ab-43c4-84e5-0933c84b4f4f"
+    {
+        return "Boot/system partition";
+    }
+
+    if matches!(
+        filesystem.as_str(),
+        "lvm2_member" | "linux_raid_member" | "crypto_luks"
+    ) {
+        return "Volume container";
+    }
+
     let Some(mountpoint) = mountpoint.filter(|path| !path.is_empty()) else {
         return "Not mounted";
     };
 
     if mountpoint == "/" {
         return "System root";
+    }
+
+    if matches!(
+        mountpoint,
+        "/boot" | "/boot/efi" | "/boot/firmware" | "/efi"
+    ) {
+        return "Boot volume";
     }
 
     let Some(options) = mount_options else {
@@ -399,13 +430,6 @@ fn assess_destination(
         return "Mount mode unknown";
     }
 
-    match writable {
-        Some(true) => {}
-        Some(false) => return "No write access",
-        None => return "Access not verified",
-    }
-
-    let filesystem = filesystem.unwrap_or_default().to_ascii_lowercase();
     if !matches!(
         filesystem.as_str(),
         "ext2" | "ext3" | "ext4" | "btrfs" | "xfs" | "f2fs"
@@ -415,7 +439,7 @@ fn assess_destination(
 
     match available_bytes {
         Some(0) => "No free space",
-        Some(_) => "Candidate",
+        Some(_) => "Potential device",
         None => "Check free space",
     }
 }
@@ -528,8 +552,19 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
         }
         if column == 6 {
             let explanation = match value.as_str() {
-                "Candidate" => {
-                    "Preliminary candidate only. Final backup preflight is still required."
+                "Potential device" => {
+                    "Volume type and filesystem look suitable. Choose a destination directory; write permissions and source-volume conflicts must still be checked."
+                }
+                "Unsupported volume type" => {
+                    "This block-device type is not eligible as a backup destination."
+                }
+                "Swap volume" => "Swap space is never a backup destination."
+                "Boot/system partition" => {
+                    "EFI, BIOS boot, reserved and swap partition types are excluded."
+                }
+                "Boot volume" => "Boot and EFI mount points are excluded from backup destinations."
+                "Volume container" => {
+                    "This is a storage container or RAID/LUKS member, not a mounted data filesystem."
                 }
                 "System root" => {
                     "The running system root is not accepted as a backup destination."
@@ -539,12 +574,8 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
                 }
                 "Check free space" => "Available space could not be determined.",
                 "Mount not verified" => "The mount status could not be verified.",
-                "Access not verified" => "Write access could not be checked.",
                 "Mount mode unknown" => {
                     "The mount options do not clearly indicate read-write access."
-                }
-                "No write access" => {
-                    "The current user does not have write access to this mountpoint."
                 }
                 "No free space" => "The filesystem reports no available space.",
                 "Read-only" => "The filesystem is mounted read-only.",
@@ -659,22 +690,94 @@ fn add_nav_button(
 mod tests {
     use super::assess_destination;
 
+    fn assess(
+        device_type: Option<&str>,
+        filesystem: Option<&str>,
+        partition_type: Option<&str>,
+        partition_label: Option<&str>,
+        mountpoint: Option<&str>,
+        options: Option<&str>,
+        available: Option<u64>,
+    ) -> &'static str {
+        assess_destination(
+            device_type,
+            filesystem,
+            partition_type,
+            partition_label,
+            mountpoint,
+            options,
+            available,
+        )
+    }
+
     #[test]
-    fn destination_requires_a_mountpoint() {
+    fn swap_filesystem_is_rejected_even_when_unmounted() {
         assert_eq!(
-            assess_destination(None, None, None, None, None),
-            "Not mounted"
+            assess(Some("part"), Some("swap"), None, None, None, None, None),
+            "Swap volume"
         );
     }
 
     #[test]
-    fn system_root_is_not_a_backup_destination() {
+    fn efi_partition_is_rejected_even_when_unmounted() {
         assert_eq!(
-            assess_destination(
+            assess(
+                Some("part"),
+                Some("vfat"),
+                Some("c12a7328-f81f-11d2-ba4b-00a0c93ec93b"),
+                Some("EFI System Partition"),
+                None,
+                None,
+                None,
+            ),
+            "Boot/system partition"
+        );
+    }
+
+    #[test]
+    fn bios_boot_partition_is_rejected() {
+        assert_eq!(
+            assess(
+                Some("part"),
+                None,
+                Some("21686148-6449-6e6f-744e-656564454649"),
+                None,
+                None,
+                None,
+                None,
+            ),
+            "Boot/system partition"
+        );
+    }
+
+    #[test]
+    fn boot_mountpoints_are_rejected() {
+        for mountpoint in ["/boot", "/boot/efi", "/boot/firmware", "/efi"] {
+            assert_eq!(
+                assess(
+                    Some("part"),
+                    Some("ext4"),
+                    None,
+                    None,
+                    Some(mountpoint),
+                    Some("rw,relatime"),
+                    Some(1_000_000_000),
+                ),
+                "Boot volume"
+            );
+        }
+    }
+
+    #[test]
+    fn system_root_is_rejected() {
+        assert_eq!(
+            assess(
+                Some("part"),
                 Some("ext4"),
+                None,
+                None,
                 Some("/"),
                 Some("rw,relatime"),
-                Some(true),
                 Some(1_000_000_000),
             ),
             "System root"
@@ -682,13 +785,49 @@ mod tests {
     }
 
     #[test]
+    fn unsupported_block_device_types_are_rejected() {
+        assert_eq!(
+            assess(
+                Some("loop"),
+                Some("ext4"),
+                None,
+                None,
+                Some("/mnt/backup"),
+                Some("rw,relatime"),
+                Some(1_000_000_000),
+            ),
+            "Unsupported volume type"
+        );
+    }
+
+    #[test]
+    fn storage_containers_are_not_destinations() {
+        for filesystem in ["LVM2_member", "linux_raid_member", "crypto_LUKS"] {
+            assert_eq!(
+                assess(
+                    Some("part"),
+                    Some(filesystem),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
+                "Volume container"
+            );
+        }
+    }
+
+    #[test]
     fn read_only_mount_is_rejected() {
         assert_eq!(
-            assess_destination(
+            assess(
+                Some("part"),
                 Some("ext4"),
+                None,
+                None,
                 Some("/mnt/backup"),
                 Some("ro,relatime"),
-                Some(false),
                 Some(1_000_000_000),
             ),
             "Read-only"
@@ -696,27 +835,15 @@ mod tests {
     }
 
     #[test]
-    fn destination_requires_write_access() {
-        assert_eq!(
-            assess_destination(
-                Some("ext4"),
-                Some("/mnt/backup"),
-                Some("rw,relatime"),
-                Some(false),
-                Some(1_000_000_000),
-            ),
-            "No write access"
-        );
-    }
-
-    #[test]
     fn unknown_filesystems_require_verification() {
         assert_eq!(
-            assess_destination(
+            assess(
+                Some("part"),
                 Some("exfat"),
+                None,
+                None,
                 Some("/mnt/backup"),
                 Some("rw,relatime"),
-                Some(true),
                 Some(1_000_000_000),
             ),
             "Verify filesystem"
@@ -724,13 +851,31 @@ mod tests {
     }
 
     #[test]
-    fn destination_without_reported_space_is_not_confirmed() {
+    fn mount_mode_must_be_verified() {
         assert_eq!(
-            assess_destination(
+            assess(
+                Some("part"),
                 Some("ext4"),
+                None,
+                None,
+                Some("/mnt/backup"),
+                Some("relatime"),
+                Some(1_000_000_000),
+            ),
+            "Mount mode unknown"
+        );
+    }
+
+    #[test]
+    fn missing_space_information_is_not_confirmed() {
+        assert_eq!(
+            assess(
+                Some("part"),
+                Some("ext4"),
+                None,
+                None,
                 Some("/mnt/backup"),
                 Some("rw,relatime"),
-                Some(true),
                 None,
             ),
             "Check free space"
@@ -738,27 +883,15 @@ mod tests {
     }
 
     #[test]
-    fn writable_linux_filesystem_with_space_is_a_candidate() {
-        assert_eq!(
-            assess_destination(
-                Some("ext4"),
-                Some("/mnt/backup"),
-                Some("rw,relatime"),
-                Some(true),
-                Some(1_000_000_000),
-            ),
-            "Candidate"
-        );
-    }
-
-    #[test]
     fn zero_available_space_is_rejected() {
         assert_eq!(
-            assess_destination(
+            assess(
+                Some("part"),
                 Some("ext4"),
+                None,
+                None,
                 Some("/mnt/backup"),
                 Some("rw,relatime"),
-                Some(true),
                 Some(0),
             ),
             "No free space"
@@ -766,16 +899,18 @@ mod tests {
     }
 
     #[test]
-    fn unknown_mount_mode_is_not_accepted() {
+    fn supported_data_volume_is_only_a_potential_device() {
         assert_eq!(
-            assess_destination(
+            assess(
+                Some("part"),
                 Some("ext4"),
+                None,
+                None,
                 Some("/mnt/backup"),
-                Some("relatime"),
-                Some(true),
+                Some("rw,relatime"),
                 Some(1_000_000_000),
             ),
-            "Mount mode unknown"
+            "Potential device"
         );
     }
 }
