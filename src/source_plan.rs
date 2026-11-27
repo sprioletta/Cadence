@@ -499,8 +499,8 @@ mod tests {
             vec![
                 PathBuf::from("/"),
                 PathBuf::from("/opt"),
-                PathBuf::from("/usr"),
                 PathBuf::from("/srv"),
+                PathBuf::from("/usr"),
                 PathBuf::from("/var")
             ]
         );
@@ -528,7 +528,11 @@ mod tests {
         config.user_data_enabled = false;
 
         let plan = build_source_plan(&[mount(1, "/", "ext4")], &config).unwrap();
-        let system = plan.sources.iter().find(|source| source.scope == BackupScope::System).unwrap();
+        let system = plan
+            .sources
+            .iter()
+            .find(|source| source.scope == BackupScope::System)
+            .unwrap();
 
         assert!(!system.exclusions.contains(&PathBuf::from("/home/alice")));
         assert!(source_paths(&plan, BackupScope::UserData).is_empty());
@@ -540,7 +544,11 @@ mod tests {
         config.user_data_mode = UserDataMode::None;
 
         let plan = build_source_plan(&[mount(1, "/", "ext4")], &config).unwrap();
-        let system = plan.sources.iter().find(|source| source.scope == BackupScope::System).unwrap();
+        let system = plan
+            .sources
+            .iter()
+            .find(|source| source.scope == BackupScope::System)
+            .unwrap();
 
         assert!(!system.exclusions.contains(&PathBuf::from("/home/alice")));
         assert!(source_paths(&plan, BackupScope::UserData).is_empty());
@@ -555,7 +563,11 @@ mod tests {
         config.selected_home_directories = vec![PathBuf::from("/home/alice")];
 
         let plan = build_source_plan(&[mount(1, "/", "ext4")], &config).unwrap();
-        let system = plan.sources.iter().find(|source| source.scope == BackupScope::System).unwrap();
+        let system = plan
+            .sources
+            .iter()
+            .find(|source| source.scope == BackupScope::System)
+            .unwrap();
 
         assert!(system.exclusions.contains(&PathBuf::from("/home/alice")));
         assert!(system.exclusions.contains(&PathBuf::from("/home/bob")));
