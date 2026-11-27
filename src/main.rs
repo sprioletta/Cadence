@@ -1,4 +1,5 @@
 pub mod mount_inventory;
+pub mod source_plan;
 
 use adw::prelude::*;
 use serde_json::Value;
