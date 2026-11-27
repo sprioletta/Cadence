@@ -534,6 +534,7 @@ fn append_storage_header(
 
         let header_label = gtk::Label::new(Some(&label));
         let numeric_column = column == 3 || column == 4;
+        header_label.add_css_class("heading");
         header_label.set_halign(gtk::Align::Fill);
         header_label.set_xalign(if numeric_column { 1.0 } else { 0.0 });
 
