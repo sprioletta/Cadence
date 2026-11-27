@@ -1632,7 +1632,8 @@ fn make_settings_page() -> gtk::Box {
                     current.selected_users.dedup();
                     match save_backup_config(&current) {
                         Ok(()) => status_for_user.set_text("Backup settings saved."),
-                        Err(error) => status_for_user.set_text(&format!("Could not save settings: {error}")),
+                        Err(error) => status_for_user
+                            .set_text(&format!("Could not save settings: {error}")),
                     }
                 });
                 accounts_box.append(&check);
@@ -1685,7 +1686,9 @@ fn make_settings_page() -> gtk::Box {
         current.system_enabled = button.is_active();
         match save_backup_config(&current) {
             Ok(()) => status_for_system.set_text("Backup settings saved."),
-            Err(error) => status_for_system.set_text(&format!("Could not save settings: {error}")),
+            Err(error) => {
+                status_for_system.set_text(&format!("Could not save settings: {error}"))
+            }
         }
     });
 
@@ -1698,7 +1701,9 @@ fn make_settings_page() -> gtk::Box {
         accounts_for_user_data.set_sensitive(button.is_active());
         match save_backup_config(&current) {
             Ok(()) => status_for_user_data.set_text("Backup settings saved."),
-            Err(error) => status_for_user_data.set_text(&format!("Could not save settings: {error}")),
+            Err(error) => {
+                status_for_user_data.set_text(&format!("Could not save settings: {error}"))
+            }
         }
     });
     accounts_box.set_sensitive(config.borrow().user_data_enabled);
@@ -1713,7 +1718,9 @@ fn make_settings_page() -> gtk::Box {
         current.user_data_mode = mode_id.to_string();
         match save_backup_config(&current) {
             Ok(()) => status_for_mode.set_text("Backup settings saved."),
-            Err(error) => status_for_mode.set_text(&format!("Could not save settings: {error}")),
+            Err(error) => {
+                status_for_mode.set_text(&format!("Could not save settings: {error}"))
+            }
         }
     });
 
@@ -1854,7 +1861,55 @@ mod tests {
         assert!(config.system_enabled);
         assert!(config.user_data_enabled);
         assert_eq!(config.user_data_mode, "all");
+        assert_eq!(config.user_selection_mode, "all");
         assert!(config.selected_users.is_empty());
+    }
+
+
+    #[test]
+    fn legacy_empty_user_list_migrates_to_all_accounts() {
+        let value = serde_json::json!({
+            "backup": {
+                "user_data": {
+                    "enabled": true,
+                    "home_directories": []
+                }
+            }
+        });
+        let config = BackupConfig::from_json(&value);
+        assert_eq!(config.user_selection_mode, "all");
+        assert!(config.selected_users.is_empty());
+    }
+
+    #[test]
+    fn legacy_populated_user_list_migrates_to_explicit_selection() {
+        let value = serde_json::json!({
+            "backup": {
+                "user_data": {
+                    "enabled": true,
+                    "home_directories": ["/home/alice"]
+                }
+            }
+        });
+        let config = BackupConfig::from_json(&value);
+        assert_eq!(config.user_selection_mode, "selected");
+        assert_eq!(config.selected_users, vec!["/home/alice"]);
+    }
+
+    #[test]
+    fn explicit_empty_selection_means_no_user_accounts() {
+        let value = serde_json::json!({
+            "backup": {
+                "user_data": {
+                    "selection_mode": "selected",
+                    "home_directories": []
+                }
+            }
+        });
+        let config = BackupConfig::from_json(&value);
+        assert_eq!(config.user_selection_mode, "selected");
+        assert!(config.selected_users.is_empty());
+        assert_eq!(config.to_json()["user_data"]["selection_mode"], "selected");
     }
 
     #[test]
