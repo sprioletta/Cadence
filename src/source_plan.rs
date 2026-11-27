@@ -193,6 +193,7 @@ pub fn build_source_plan(
             if selected_homes
                 .iter()
                 .any(|home| mount_point != home && mount_point.starts_with(home))
+                && !user_source_is_excluded(options, mount_point)
             {
                 if !plan.sources.iter().any(|source| {
                     source.scope == BackupScope::UserData && source.path == mount.mount_point
