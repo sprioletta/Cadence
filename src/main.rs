@@ -392,11 +392,10 @@ fn assess_destination(
         return "Mount not verified";
     };
 
-    let options: Vec<&str> = options.split(',').collect();
-    if options.contains(&"ro") {
+    if options.split(',').any(|option| option == "ro") {
         return "Read-only";
     }
-    if !options.contains(&"rw") {
+    if !options.split(',').any(|option| option == "rw") {
         return "Mount mode unknown";
     }
 
@@ -532,15 +531,21 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
                 "Candidate" => {
                     "Preliminary candidate only. Final backup preflight is still required."
                 }
-                "System root" => "The running system root is not accepted as a backup destination.",
+                "System root" => {
+                    "The running system root is not accepted as a backup destination."
+                }
                 "Verify filesystem" => {
                     "Filesystem support for the required snapshot features is not confirmed."
                 }
                 "Check free space" => "Available space could not be determined.",
                 "Mount not verified" => "The mount status could not be verified.",
                 "Access not verified" => "Write access could not be checked.",
-                "Mount mode unknown" => "The mount options do not clearly indicate read-write access.",
-                "No write access" => "The current user does not have write access to this mountpoint.",
+                "Mount mode unknown" => {
+                    "The mount options do not clearly indicate read-write access."
+                }
+                "No write access" => {
+                    "The current user does not have write access to this mountpoint."
+                }
                 "No free space" => "The filesystem reports no available space.",
                 "Read-only" => "The filesystem is mounted read-only.",
                 _ => "The filesystem is not mounted.",
