@@ -51,13 +51,25 @@ impl BackupConfig {
             .get("user_data")
             .and_then(|value| value.get("home_directories"))
             .and_then(Value::as_array)
-            .map(|items| items.iter().filter_map(Value::as_str).map(str::to_string).collect())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
             .unwrap_or_default();
         let custom_exclusions = backup
             .get("exclusions")
             .and_then(|value| value.get("custom_paths"))
             .and_then(Value::as_array)
-            .map(|items| items.iter().filter_map(Value::as_str).map(str::to_string).collect())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
             .unwrap_or_default();
         Self {
             system_enabled: backup
@@ -97,7 +109,6 @@ impl BackupConfig {
     }
 }
 
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct LocalUser {
     username: String,
@@ -115,7 +126,9 @@ fn discover_local_users() -> Result<Vec<LocalUser>, String> {
 
     let uid_min = configured_uid_min(&login_defs).unwrap_or(1000);
     let shells = parse_login_shells(&shells_file);
-    Ok(parse_local_users(&passwd, uid_min, &shells, |home| home.is_dir()))
+    Ok(parse_local_users(&passwd, uid_min, &shells, |home| {
+        home.is_dir()
+    }))
 }
 
 fn configured_uid_min(contents: &str) -> Option<u32> {
@@ -197,7 +210,11 @@ fn destination_from_json(value: &Value) -> Option<DestinationConfig> {
         .and_then(Value::as_str)
         .filter(|uuid| !uuid.trim().is_empty())
         .map(str::to_string);
-    Some(DestinationConfig { mountpoint, path, uuid })
+    Some(DestinationConfig {
+        mountpoint,
+        path,
+        uuid,
+    })
 }
 
 const STORAGE_COLUMNS: [(&str, i32); 7] = [
@@ -1509,7 +1526,7 @@ fn add_nav_button(
 
 #[cfg(test)]
 mod tests {
-    use super::{assess_destination, destination_from_json, destination_path_for, BackupConfig};
+    use super::{BackupConfig, assess_destination, destination_from_json, destination_path_for};
 
     fn assess(
         device_type: Option<&str>,
@@ -1531,7 +1548,6 @@ mod tests {
         )
     }
 
-    
     #[test]
     fn uid_min_is_read_from_login_defs_and_ignores_comments() {
         assert_eq!(
@@ -1580,12 +1596,7 @@ mod tests {
             "alice:x:1000:1000:Alice:/home/alice:/bin/bash\n",
             "alice:x:1000:1000:Alice:/home/alice:/bin/bash\n"
         );
-        let users = super::parse_local_users(
-            passwd,
-            1000,
-            &["/bin/bash".to_string()],
-            |_| true,
-        );
+        let users = super::parse_local_users(passwd, 1000, &["/bin/bash".to_string()], |_| true);
         assert_eq!(users.len(), 1);
     }
 
