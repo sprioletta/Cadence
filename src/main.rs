@@ -430,6 +430,8 @@ append_device_row(
             index as i32 + 1,
             destination_config,
             destination_info,
+            status,
+            sort_state,
         );
     }
     status.set_text(&format!(
@@ -815,6 +817,8 @@ fn append_device_row(
     row_index: i32,
     destination_config: &Rc<RefCell<Option<DestinationConfig>>>,
     destination_info: &gtk::Label,
+    status: &gtk::Label,
+    sort_state: &Rc<RefCell<Option<(usize, bool)>>>,
 ) {
     let path = json_text(device, "path")
         .or_else(|| json_text(device, "name"))
@@ -832,7 +836,21 @@ fn append_device_row(
         .map(format_gigabytes)
         .unwrap_or_else(|| "—".to_string());
     let mountpoint = device_mountpoint(device);
-    let destination = destination_status(device);
+    let selected = mountpoint
+        .as_deref()
+        .map(|current| {
+            destination_config
+                .borrow()
+                .as_ref()
+                .map(|config| config.mountpoint == current)
+                .unwrap_or(false)
+        })
+        .unwrap_or(false);
+    let destination = if selected {
+        "Selected"
+    } else {
+        destination_status(device)
+    };
 
     let text_values = [path, kind, filesystem, size, available];
 
@@ -897,6 +915,9 @@ fn append_device_row(
             select.set_tooltip_text(Some("Use this volume for Cadence snapshots"));
             let config_state = destination_config.clone();
             let info_label = destination_info.clone();
+            let table_for_selection = table.clone();
+            let status_for_selection = status.clone();
+            let sort_for_selection = sort_state.clone();
             let mountpoint_for_click = mountpoint.clone();
             select.connect_clicked(move |_| {
                 match create_destination_config(&mountpoint_for_click) {
@@ -904,6 +925,13 @@ fn append_device_row(
                         Ok(()) => {
                             *config_state.borrow_mut() = Some(config.clone());
                             update_destination_info(&info_label, Some(&config));
+                            refresh_storage(
+                                &table_for_selection,
+                                &status_for_selection,
+                                &sort_for_selection,
+                                &config_state,
+                                &info_label,
+                            );
                         }
                         Err(error) => update_destination_error(
                             &info_label,
@@ -966,6 +994,7 @@ fn make_detail_button(
 
 fn destination_icon(status: &str) -> (&'static str, &'static str) {
     match status {
+        "Selected" => ("emblem-ok-symbolic", "success"),
         "Potential device" => ("dialog-information-symbolic", "suggested-action"),
         "Unsupported volume type"
         | "Swap volume"
@@ -981,6 +1010,9 @@ fn destination_icon(status: &str) -> (&'static str, &'static str) {
 
 fn destination_explanation(status: &str) -> &'static str {
     match status {
+        "Selected" => {
+            "This volume is the currently selected destination for Cadence snapshots."
+        }
         "Potential device" => {
             "The volume type and filesystem appear suitable. Select a destination directory before checking write permissions and whether this filesystem also contains source data."
         }
