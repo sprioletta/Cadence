@@ -3,6 +3,15 @@ use serde_json::Value;
 use std::path::Path;
 use std::process::Command;
 
+const STORAGE_COLUMNS: [(&str, i32); 6] = [
+    ("Device", 132),
+    ("Type", 60),
+    ("Filesystem", 90),
+    ("Size", 90),
+    ("Available", 100),
+    ("Mounted at", 120),
+];
+
 fn main() {
     let application = adw::Application::builder()
         .application_id("io.github.sprioletta.Cadence")
@@ -231,37 +240,20 @@ fn make_storage_page() -> gtk::Box {
     list.add_css_class("boxed-list");
     list.set_selection_mode(gtk::SelectionMode::None);
 
-    let column_header = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+    let column_header = gtk::Grid::new();
+    column_header.set_column_spacing(12);
     column_header.set_margin_start(12);
     column_header.set_margin_end(12);
     column_header.set_margin_top(8);
     column_header.set_margin_bottom(8);
-    for (index, (title, width)) in [
-        ("Device", 132),
-        ("Type", 60),
-        ("Filesystem", 90),
-        ("Size", 90),
-        ("Available", 100),
-        ("Mounted at", 120),
-    ]
-    .iter()
-    .enumerate()
-    {
+    for (column, (title, width)) in STORAGE_COLUMNS.iter().enumerate() {
         let label = gtk::Label::new(Some(title));
         label.add_css_class("caption");
         label.add_css_class("dim-label");
         label.set_halign(gtk::Align::Start);
         label.set_width_request(*width);
-        label.set_max_width_chars(match index {
-            0 => 16,
-            1 => 8,
-            2 => 10,
-            3 => 10,
-            4 => 10,
-            _ => 40,
-        });
-        label.set_hexpand(index == 5);
-        column_header.append(&label);
+        label.set_hexpand(column == STORAGE_COLUMNS.len() - 1);
+        column_header.attach(&label, column as i32, 0, 1, 1);
     }
 
     let scrolled = gtk::ScrolledWindow::builder()
@@ -405,37 +397,29 @@ fn make_device_row(device: &Value) -> gtk::ListBoxRow {
         mountpoint.clone()
     };
 
-    let is_partition = kind == "part";
-    for (index, (value, width)) in [
-        (path, 132),
-        (kind, 60),
-        (filesystem, 90),
-        (size, 90),
-        (available, 100),
-        (mountpoint_display, 120),
-    ]
-    .into_iter()
-    .enumerate()
-    {
+    row.set_spacing(12);
+
+    let values = [
+        path,
+        kind,
+        filesystem,
+        size,
+        available,
+        mountpoint_display,
+    ];
+    for (column, (value, (_, width))) in values.into_iter().zip(STORAGE_COLUMNS.iter()).enumerate() {
         let label = gtk::Label::new(Some(&value));
-        label.set_halign(gtk::Align::Start);
-        label.set_xalign(0.0);
-        label.set_hexpand(index == 5);
-        label.set_width_request(width);
-        label.set_max_width_chars(match index {
-            0 => 16,
-            1 => 8,
-            2 => 10,
-            3 => 10,
-            4 => 10,
-            _ => 40,
+        label.set_halign(if column == 3 || column == 4 {
+            gtk::Align::End
+        } else {
+            gtk::Align::Start
         });
+        label.set_xalign(if column == 3 || column == 4 { 1.0 } else { 0.0 });
+        label.set_width_request(*width);
+        label.set_hexpand(column == STORAGE_COLUMNS.len() - 1);
         label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
 
-        if index == 0 && is_partition {
-            label.set_margin_start(16);
-        }
-        if index == 5 && mountpoint != "—" {
+        if column == 5 && mountpoint != "—" {
             label.set_tooltip_text(Some(&mountpoint));
         }
         row.append(&label);
