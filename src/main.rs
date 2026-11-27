@@ -387,12 +387,14 @@ fn assess_destination(
     let partition_type = partition_type.unwrap_or_default().to_ascii_lowercase();
     let partition_label = partition_label.unwrap_or_default().to_ascii_lowercase();
     if partition_type == "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
+        || partition_type == "0xef"
         || partition_label.contains("efi system")
         || partition_label.contains("bios boot")
         || partition_label.contains("system reserved")
         || partition_type == "21686148-6449-6e6f-744e-656564454649"
         || partition_type == "e3c9e316-0b5c-4db8-817d-f92df00215ae"
         || partition_type == "0657fd6d-a4ab-43c4-84e5-0933c84b4f4f"
+        || partition_type == "0x82"
     {
         return "Boot/system partition";
     }
@@ -732,6 +734,24 @@ mod tests {
             ),
             "Boot/system partition"
         );
+    }
+
+    #[test]
+    fn mbr_efi_and_swap_partition_types_are_rejected() {
+        for partition_type in ["0xef", "0x82"] {
+            assert_eq!(
+                assess(
+                    Some("part"),
+                    Some("vfat"),
+                    Some(partition_type),
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
+                "Boot/system partition"
+            );
+        }
     }
 
     #[test]
