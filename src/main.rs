@@ -376,7 +376,7 @@ fn refresh_storage(
         table.remove(&child);
     }
     let sort = *sort_state.borrow();
-append_storage_header(
+    append_storage_header(
         table,
         sort,
         table,
@@ -438,7 +438,9 @@ append_storage_header(
         validation.as_deref(),
     );
     destination_result.set_text(
-        validation.as_deref().unwrap_or("No active backup destination is configured."),
+        validation
+            .as_deref()
+            .unwrap_or("No active backup destination is configured."),
     );
 
     if devices.is_empty() {
@@ -460,7 +462,7 @@ append_storage_header(
 
     let count = devices.len();
     for (index, device) in devices.iter().enumerate() {
-append_device_row(
+        append_device_row(
             table,
             device,
             index as i32 + 1,
@@ -497,19 +499,17 @@ fn create_destination_config(mountpoint: &str, uuid: &str) -> Result<Destination
         );
     }
     let mounted_uuid = Command::new("findmnt")
-        .args([
-            "--noheadings",
-            "--output",
-            "UUID",
-            "--target",
-            mountpoint,
-        ])
+        .args(["--noheadings", "--output", "UUID", "--target", mountpoint])
         .output()
         .map_err(|error| format!("Could not verify the mounted filesystem identity: {error}"))?;
     if !mounted_uuid.status.success() {
-        return Err("Could not verify the filesystem mounted at the selected location.".to_string());
+        return Err(
+            "Could not verify the filesystem mounted at the selected location.".to_string(),
+        );
     }
-    let mounted_uuid = String::from_utf8_lossy(&mounted_uuid.stdout).trim().to_string();
+    let mounted_uuid = String::from_utf8_lossy(&mounted_uuid.stdout)
+        .trim()
+        .to_string();
     if mounted_uuid != uuid {
         return Err("The filesystem mounted at this location changed. Refresh the device list and try again.".to_string());
     }
@@ -608,9 +608,9 @@ fn update_destination_info(
     };
 
     let active = validation.is_some_and(|result| result.starts_with("Valid —"));
-    let mounted_device = devices.iter().find(|device| {
-        device_mountpoint(device).as_deref() == Some(config.mountpoint.as_str())
-    });
+    let mounted_device = devices
+        .iter()
+        .find(|device| device_mountpoint(device).as_deref() == Some(config.mountpoint.as_str()));
     let verified_device = mounted_device.filter(|device| {
         config.uuid.as_deref().is_some_and(|expected_uuid| {
             json_text(device, "uuid").as_deref() == Some(expected_uuid)
@@ -643,26 +643,33 @@ fn validate_destination(config: &DestinationConfig, devices: &[Value]) -> String
         return "Identity not verified — select this volume again with Use".to_string();
     };
 
-    let Some(device) = devices.iter().find(|device| {
-        device_mountpoint(device).as_deref() == Some(config.mountpoint.as_str())
-    }) else {
+    let Some(device) = devices
+        .iter()
+        .find(|device| device_mountpoint(device).as_deref() == Some(config.mountpoint.as_str()))
+    else {
         return "Volume unavailable — the configured mount point is not present".to_string();
     };
 
     let Some(current_uuid) = json_text(device, "uuid") else {
-        return "Identity could not be verified — the mounted volume has no readable UUID".to_string();
+        return "Identity could not be verified — the mounted volume has no readable UUID"
+            .to_string();
     };
     if current_uuid != expected_uuid {
-        return "Identity mismatch — a different filesystem is mounted at this location".to_string();
+        return "Identity mismatch — a different filesystem is mounted at this location"
+            .to_string();
     }
 
     let assessment = destination_status(device);
     match assessment {
         "Read-only" => return "Read-only — the volume is not writable".to_string(),
-        "No free space" => return "Insufficient space — the filesystem reports no free space".to_string(),
-        "Check free space" => return "Free space unknown — capacity could not be verified".to_string(),
+        "No free space" => {
+            return "Insufficient space — the filesystem reports no free space".to_string();
+        }
+        "Check free space" => {
+            return "Free space unknown — capacity could not be verified".to_string();
+        }
         "Mount not verified" | "Mount mode unknown" => {
-            return "Mount access could not be verified".to_string()
+            return "Mount access could not be verified".to_string();
         }
         "Potential device" => {}
         other => return format!("Volume is not eligible: {other}"),
@@ -917,7 +924,7 @@ fn append_storage_header(
                     _ => Some((column, true)),
                 };
                 *sort_state.borrow_mut() = next_sort;
-refresh_storage(
+                refresh_storage(
                     &table,
                     &status,
                     &sort_state,
@@ -1005,7 +1012,10 @@ fn append_device_row(
         })
         .unwrap_or(false);
     let destination = if selected {
-        match selected_config.as_ref().and_then(|config| config.uuid.as_deref()) {
+        match selected_config
+            .as_ref()
+            .and_then(|config| config.uuid.as_deref())
+        {
             None => "Identity not verified",
             Some(expected_uuid) => match json_text(device, "uuid").as_deref() {
                 Some(current_uuid) if current_uuid == expected_uuid => "Selected",
