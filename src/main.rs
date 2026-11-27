@@ -15,6 +15,8 @@ fn build_ui(application: &adw::Application) {
         .build();
 
     let stack = gtk::Stack::builder()
+        .hexpand(true)
+        .vexpand(true)
         .transition_type(gtk::StackTransitionType::Crossfade)
         .transition_duration(180)
         .build();
@@ -57,6 +59,8 @@ fn build_ui(application: &adw::Application) {
 
     let sidebar = gtk::Box::new(gtk::Orientation::Vertical, 6);
     sidebar.set_width_request(220);
+    sidebar.set_hexpand(false);
+    sidebar.set_vexpand(true);
     sidebar.set_margin_top(12);
     sidebar.set_margin_bottom(12);
     sidebar.set_margin_start(12);
@@ -88,6 +92,8 @@ fn build_ui(application: &adw::Application) {
     let separator = gtk::Separator::new(gtk::Orientation::Vertical);
 
     let content = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    content.set_hexpand(true);
+    content.set_vexpand(true);
     content.append(&sidebar);
     content.append(&separator);
     content.append(&stack);
