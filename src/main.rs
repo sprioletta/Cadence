@@ -533,11 +533,19 @@ fn append_storage_header(
         };
 
         let header_label = gtk::Label::new(Some(&label));
-        let numeric_column = column == 3 || column == 4;
+        let alignment = match column {
+            3 | 4 => gtk::Align::End,
+            5 | 6 => gtk::Align::Center,
+            _ => gtk::Align::Start,
+        };
         header_label.add_css_class("heading");
         header_label.set_halign(gtk::Align::Fill);
         header_label.set_hexpand(true);
-        header_label.set_xalign(if numeric_column { 1.0 } else { 0.0 });
+        header_label.set_xalign(match alignment {
+            gtk::Align::End => 1.0,
+            gtk::Align::Center => 0.5,
+            _ => 0.0,
+        });
         header_label.set_size_request(*width, -1);
         header_label.set_margin_top(8);
         header_label.set_margin_bottom(8);
@@ -625,11 +633,6 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
     for (column, value) in text_values.into_iter().enumerate() {
         let label = gtk::Label::new(Some(&value));
         let numeric = column == 3 || column == 4;
-        label.set_halign(if numeric {
-            gtk::Align::End
-        } else {
-            gtk::Align::Start
-        });
         label.set_xalign(if numeric { 1.0 } else { 0.0 });
         if numeric {
             label.add_css_class("numeric");
@@ -661,7 +664,7 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
     );
     mount_button.set_size_request(STORAGE_COLUMNS[5].1, -1);
     mount_button.set_hexpand(true);
-    mount_button.set_halign(gtk::Align::Fill);
+    mount_button.set_halign(gtk::Align::Center);
     mount_button.set_margin_top(4);
     mount_button.set_margin_bottom(4);
     mount_button.set_tooltip_text(Some(mountpoint_text));
@@ -677,7 +680,7 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
     );
     status_button.set_size_request(STORAGE_COLUMNS[6].1, -1);
     status_button.set_hexpand(true);
-    status_button.set_halign(gtk::Align::Fill);
+    status_button.set_halign(gtk::Align::Center);
     status_button.set_margin_top(4);
     status_button.set_margin_bottom(4);
     table.attach(&status_button, 6, row_index, 1, 1);
