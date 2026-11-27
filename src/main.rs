@@ -256,7 +256,7 @@ fn make_storage_page() -> gtk::Box {
     destination_info.set_xalign(0.0);
     destination_info.set_wrap(true);
     destination_info.add_css_class("dim-label");
-    update_destination_info(&destination_info, destination_config.borrow().as_ref(), None);
+    update_destination_info(&destination_info, destination_config.borrow().as_ref());
 
     let destination_card = gtk::Frame::new(None);
     destination_card.add_css_class("card");
@@ -592,7 +592,7 @@ fn save_destination_config(config: &DestinationConfig) -> Result<(), String> {
 fn update_destination_info(label: &gtk::Label, config: Option<&DestinationConfig>) {
     match config {
         Some(config) => label.set_text(&format!(
-            "Volume: {}\\nBackup folder: {}",
+            "Volume: {}\nBackup folder: {}",
             config.mountpoint, config.path
         )),
         None => label.set_text("Not configured. Choose “Use” beside an eligible volume below."),
