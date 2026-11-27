@@ -336,8 +336,7 @@ fn collect_devices(device: &Value, devices: &mut Vec<Value>) {
 fn append_storage_header(table: &gtk::Grid) {
     for (column, (title, width)) in STORAGE_COLUMNS.iter().enumerate() {
         let label = gtk::Label::new(Some(title));
-        label.add_css_class("caption");
-        label.add_css_class("dim-label");
+        label.add_css_class("heading");
         let numeric_column = column == 3 || column == 4;
         label.set_halign(if numeric_column {
             gtk::Align::End
