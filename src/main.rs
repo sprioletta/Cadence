@@ -1,4 +1,4 @@
-mod mount_inventory;
+pub mod mount_inventory;
 
 use adw::prelude::*;
 use serde_json::Value;
