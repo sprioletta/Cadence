@@ -994,7 +994,7 @@ fn make_detail_button(
 
 fn destination_icon(status: &str) -> (&'static str, &'static str) {
     match status {
-        "Selected" => ("emblem-ok-symbolic", "success"),
+        "Selected" => ("emblem-default-symbolic", "success"),
         "Potential device" => ("dialog-information-symbolic", "suggested-action"),
         "Unsupported volume type"
         | "Swap volume"
