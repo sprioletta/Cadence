@@ -246,14 +246,15 @@ fn make_storage_page() -> gtk::Box {
 
     let scrolled = gtk::ScrolledWindow::builder()
         .hexpand(true)
-        .vexpand(true)
         .child(&table)
         .build();
+    scrolled.set_propagate_natural_height(true);
+    scrolled.set_max_content_height(440);
 
     let device_card = gtk::Frame::new(None);
     device_card.add_css_class("card");
     device_card.set_hexpand(true);
-    device_card.set_vexpand(true);
+    device_card.set_vexpand(false);
 
     let card_content = gtk::Box::new(gtk::Orientation::Vertical, 8);
     card_content.set_margin_top(12);
@@ -617,11 +618,17 @@ fn make_detail_button(
     heading.add_css_class("heading");
     heading.set_halign(gtk::Align::Start);
     heading.set_wrap(true);
+    heading.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+    heading.set_width_chars(24);
+    heading.set_max_width_chars(34);
 
     let details = gtk::Label::new(Some(description));
     details.set_halign(gtk::Align::Start);
     details.set_xalign(0.0);
     details.set_wrap(true);
+    details.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+    details.set_width_chars(32);
+    details.set_max_width_chars(40);
     details.set_selectable(true);
 
     content.append(&heading);
