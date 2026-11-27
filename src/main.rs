@@ -532,11 +532,16 @@ fn append_storage_header(
             (*title).to_string()
         };
 
-        let button = gtk::Button::with_label(&label);
+        let header_label = gtk::Label::new(Some(&label));
+        let numeric_column = column == 3 || column == 4;
+        header_label.set_halign(gtk::Align::Fill);
+        header_label.set_xalign(if numeric_column { 1.0 } else { 0.0 });
+
+        let button = gtk::Button::new();
+        button.set_child(Some(&header_label));
         button.add_css_class("flat");
-        button.add_css_class("heading");
         button.set_halign(gtk::Align::Fill);
-        button.set_hexpand(false);
+        button.set_hexpand(true);
         button.set_size_request(*width, -1);
         button.set_margin_top(4);
         button.set_margin_bottom(4);
@@ -566,12 +571,20 @@ fn compare_device_values(left: &Value, right: &Value, column: usize) -> std::cmp
     use std::cmp::Ordering;
 
     match column {
-        0 => compare_optional_text(json_text(left, "path").or_else(|| json_text(left, "name")),
-            json_text(right, "path").or_else(|| json_text(right, "name"))),
+        0 => compare_optional_text(
+            json_text(left, "path").or_else(|| json_text(left, "name")),
+            json_text(right, "path").or_else(|| json_text(right, "name")),
+        ),
         1 => compare_optional_text(json_text(left, "type"), json_text(right, "type")),
         2 => compare_optional_text(json_text(left, "fstype"), json_text(right, "fstype")),
-        3 => compare_optional_number(left.get("size").and_then(Value::as_u64), right.get("size").and_then(Value::as_u64)),
-        4 => compare_optional_number(left.get("fsavail").and_then(Value::as_u64), right.get("fsavail").and_then(Value::as_u64)),
+        3 => compare_optional_number(
+            left.get("size").and_then(Value::as_u64),
+            right.get("size").and_then(Value::as_u64),
+        ),
+        4 => compare_optional_number(
+            left.get("fsavail").and_then(Value::as_u64),
+            right.get("fsavail").and_then(Value::as_u64),
+        ),
         5 => compare_optional_text(device_mountpoint(left), device_mountpoint(right)),
         6 => destination_status(left).cmp(destination_status(right)),
         _ => Ordering::Equal,
@@ -579,7 +592,9 @@ fn compare_device_values(left: &Value, right: &Value, column: usize) -> std::cmp
 }
 
 fn compare_optional_text(left: Option<String>, right: Option<String>) -> std::cmp::Ordering {
-    left.unwrap_or_default().to_lowercase().cmp(&right.unwrap_or_default().to_lowercase())
+    left.unwrap_or_default()
+        .to_lowercase()
+        .cmp(&right.unwrap_or_default().to_lowercase())
 }
 
 fn compare_optional_number(left: Option<u64>, right: Option<u64>) -> std::cmp::Ordering {
@@ -605,24 +620,23 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
     let mountpoint = device_mountpoint(device);
     let destination = destination_status(device);
 
-    let text_values = [
-        path,
-        kind,
-        filesystem,
-        size,
-        available,
-    ];
+    let text_values = [path, kind, filesystem, size, available];
 
     for (column, value) in text_values.into_iter().enumerate() {
         let label = gtk::Label::new(Some(&value));
         let numeric = column == 3 || column == 4;
-        label.set_halign(if numeric { gtk::Align::End } else { gtk::Align::Start });
+        label.set_halign(if numeric {
+            gtk::Align::End
+        } else {
+            gtk::Align::Start
+        });
         label.set_xalign(if numeric { 1.0 } else { 0.0 });
         if numeric {
             label.add_css_class("numeric");
         }
         label.set_size_request(STORAGE_COLUMNS[column].1, -1);
-        label.set_hexpand(false);
+        label.set_halign(gtk::Align::Fill);
+        label.set_hexpand(true);
         label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
         label.set_margin_top(8);
         label.set_margin_bottom(8);
@@ -646,8 +660,8 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
         &mount_description,
     );
     mount_button.set_size_request(STORAGE_COLUMNS[5].1, -1);
-    mount_button.set_hexpand(false);
-    mount_button.set_halign(gtk::Align::Start);
+    mount_button.set_hexpand(true);
+    mount_button.set_halign(gtk::Align::Fill);
     mount_button.set_margin_top(4);
     mount_button.set_margin_bottom(4);
     mount_button.set_tooltip_text(Some(mountpoint_text));
@@ -662,8 +676,8 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
         explanation,
     );
     status_button.set_size_request(STORAGE_COLUMNS[6].1, -1);
-    status_button.set_hexpand(false);
-    status_button.set_halign(gtk::Align::Start);
+    status_button.set_hexpand(true);
+    status_button.set_halign(gtk::Align::Fill);
     status_button.set_margin_top(4);
     status_button.set_margin_bottom(4);
     table.attach(&status_button, 6, row_index, 1, 1);
