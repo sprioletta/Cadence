@@ -408,6 +408,9 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
             gtk::Align::Start
         });
         label.set_xalign(if column == 3 || column == 4 { 1.0 } else { 0.0 });
+        if column == 3 || column == 4 {
+            label.add_css_class("numeric");
+        }
         label.set_width_request(*width);
         label.set_hexpand(column == STORAGE_COLUMNS.len() - 1);
         label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
