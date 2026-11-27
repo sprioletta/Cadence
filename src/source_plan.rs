@@ -144,6 +144,19 @@ pub fn build_source_plan(
                 continue;
             };
 
+            let blocked_by_skipped_mount = plan.skipped_mounts.iter().any(|skipped| {
+                home.starts_with(&skipped.mount_point)
+                    && skipped.mount_point != mount.mount_point
+                    && skipped.mount_point.starts_with(&mount.mount_point)
+            });
+            if blocked_by_skipped_mount {
+                plan.warnings.push(format!(
+                    "User home {} is located on or below an excluded filesystem mount.",
+                    home.display()
+                ));
+                continue;
+            }
+
             let exclusions = user_exclusions_for_path(options, home);
             plan.sources.push(PlannedSource {
                 mount_id: mount.mount_id,
@@ -218,6 +231,7 @@ fn validate_options(options: &SourcePlanOptions) -> Result<(), String> {
 
 fn validate_absolute_path(path: &Path) -> Result<(), String> {
     if !path.is_absolute()
+        || path == Path::new("/")
         || path
             .components()
             .any(|component| matches!(component, Component::ParentDir))
@@ -630,6 +644,29 @@ mod tests {
         let user_plan = build_source_plan(mounts, &users_only).unwrap();
         assert!(!user_plan.sources.is_empty());
         assert!(user_plan.sources.iter().all(|source| source.scope == BackupScope::UserData));
+    }
+
+    #[test]
+    fn does_not_fall_back_to_parent_filesystem_for_home_on_excluded_mount() {
+        let plan = build_source_plan(
+            &[
+                mount(1, "/", "ext4"),
+                mount(2, "/home", "nfs4"),
+            ],
+            &options(),
+        )
+        .unwrap();
+
+        assert!(source_paths(&plan, BackupScope::UserData).is_empty());
+        assert!(plan.warnings.iter().any(|warning| warning.contains("excluded filesystem")));
+    }
+
+    #[test]
+    fn rejects_root_as_a_custom_exclusion_path() {
+        let mut config = options();
+        config.system_custom_exclusions = vec![PathBuf::from("/")];
+
+        assert!(build_source_plan(&[mount(1, "/", "ext4")], &config).is_err());
     }
 
     #[test]
