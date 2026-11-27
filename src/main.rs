@@ -57,6 +57,9 @@ fn build_ui(application: &adw::Application) {
         Some("settings"),
     );
 
+    // Always start on Overview, regardless of GTK Stack's child insertion state.
+    stack.set_visible_child_name("overview");
+
     let sidebar = gtk::Box::new(gtk::Orientation::Vertical, 6);
     sidebar.set_width_request(220);
     sidebar.set_hexpand(false);
@@ -66,27 +69,42 @@ fn build_ui(application: &adw::Application) {
     sidebar.set_margin_start(12);
     sidebar.set_margin_end(12);
 
-    add_nav_button(&sidebar, &stack, "Overview", "overview", "go-home-symbolic");
+    let overview_button = add_nav_button(
+        &sidebar,
+        &stack,
+        None,
+        "Overview",
+        "overview",
+        "go-home-symbolic",
+        true,
+    );
+
     add_nav_button(
         &sidebar,
         &stack,
+        Some(&overview_button),
         "Snapshots",
         "snapshots",
         "document-save-symbolic",
+        false,
     );
     add_nav_button(
         &sidebar,
         &stack,
+        Some(&overview_button),
         "Storage",
         "storage",
         "drive-removable-media-symbolic",
+        false,
     );
     add_nav_button(
         &sidebar,
         &stack,
+        Some(&overview_button),
         "Settings",
         "settings",
         "preferences-system-symbolic",
+        false,
     );
 
     let separator = gtk::Separator::new(gtk::Orientation::Vertical);
@@ -124,10 +142,12 @@ fn make_page(icon: &str, title: &str, description: &str) -> adw::StatusPage {
 fn add_nav_button(
     sidebar: &gtk::Box,
     stack: &gtk::Stack,
+    group: Option<&gtk::ToggleButton>,
     label: &str,
     page: &str,
     icon_name: &str,
-) {
+    active: bool,
+) -> gtk::ToggleButton {
     let icon = gtk::Image::from_icon_name(icon_name);
     icon.set_pixel_size(18);
 
@@ -139,10 +159,16 @@ fn add_nav_button(
     row.append(&icon);
     row.append(&gtk::Label::new(Some(label)));
 
-    let button = gtk::Button::new();
+    let button = gtk::ToggleButton::new();
     button.set_child(Some(&row));
     button.set_hexpand(true);
     button.set_halign(gtk::Align::Fill);
+
+    if let Some(group_button) = group {
+        button.set_group(Some(group_button));
+    }
+
+    button.set_active(active);
 
     let stack_clone = stack.clone();
     let page_name = page.to_string();
@@ -151,4 +177,5 @@ fn add_nav_button(
     });
 
     sidebar.append(&button);
+    button
 }
