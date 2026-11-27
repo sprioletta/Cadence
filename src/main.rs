@@ -19,29 +19,41 @@ fn build_ui(application: &adw::Application) {
         .transition_duration(180)
         .build();
 
-    stack.add_named(&make_page(
-        "drive-harddisk-symbolic",
-        "Welcome to Cadence",
-        "Your backup destinations and snapshots will appear here.",
-    ), "overview");
+    stack.add_named(
+        &make_page(
+            "drive-harddisk-symbolic",
+            "Welcome to Cadence",
+            "Your backup destinations and snapshots will appear here.",
+        ),
+        Some("overview"),
+    );
 
-    stack.add_named(&make_page(
-        "document-save-symbolic",
-        "Snapshots",
-        "Browse and manage your system snapshots.",
-    ), "snapshots");
+    stack.add_named(
+        &make_page(
+            "document-save-symbolic",
+            "Snapshots",
+            "Browse and manage your system snapshots.",
+        ),
+        Some("snapshots"),
+    );
 
-    stack.add_named(&make_page(
-        "drive-removable-media-symbolic",
-        "Storage",
-        "Discover and inspect backup storage devices.",
-    ), "storage");
+    stack.add_named(
+        &make_page(
+            "drive-removable-media-symbolic",
+            "Storage",
+            "Discover and inspect backup storage devices.",
+        ),
+        Some("storage"),
+    );
 
-    stack.add_named(&make_page(
-        "preferences-system-symbolic",
-        "Settings",
-        "Configure Cadence preferences.",
-    ), "settings");
+    stack.add_named(
+        &make_page(
+            "preferences-system-symbolic",
+            "Settings",
+            "Configure Cadence preferences.",
+        ),
+        Some("settings"),
+    );
 
     let sidebar = gtk::Box::new(gtk::Orientation::Vertical, 6);
     sidebar.set_width_request(220);
@@ -51,9 +63,27 @@ fn build_ui(application: &adw::Application) {
     sidebar.set_margin_end(12);
 
     add_nav_button(&sidebar, &stack, "Overview", "overview", "go-home-symbolic");
-    add_nav_button(&sidebar, &stack, "Snapshots", "snapshots", "document-save-symbolic");
-    add_nav_button(&sidebar, &stack, "Storage", "storage", "drive-removable-media-symbolic");
-    add_nav_button(&sidebar, &stack, "Settings", "settings", "preferences-system-symbolic");
+    add_nav_button(
+        &sidebar,
+        &stack,
+        "Snapshots",
+        "snapshots",
+        "document-save-symbolic",
+    );
+    add_nav_button(
+        &sidebar,
+        &stack,
+        "Storage",
+        "storage",
+        "drive-removable-media-symbolic",
+    );
+    add_nav_button(
+        &sidebar,
+        &stack,
+        "Settings",
+        "settings",
+        "preferences-system-symbolic",
+    );
 
     let separator = gtk::Separator::new(gtk::Orientation::Vertical);
 
@@ -85,7 +115,13 @@ fn make_page(icon: &str, title: &str, description: &str) -> adw::StatusPage {
         .build()
 }
 
-fn add_nav_button(sidebar: &gtk::Box, stack: &gtk::Stack, label: &str, page: &str, icon_name: &str) {
+fn add_nav_button(
+    sidebar: &gtk::Box,
+    stack: &gtk::Stack,
+    label: &str,
+    page: &str,
+    icon_name: &str,
+) {
     let icon = gtk::Image::from_icon_name(icon_name);
     icon.set_pixel_size(18);
 
