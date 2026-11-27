@@ -247,13 +247,32 @@ fn make_storage_page() -> gtk::Box {
     let scrolled = gtk::ScrolledWindow::builder()
         .hexpand(true)
         .vexpand(true)
+        .min_content_height(280)
         .child(&table)
         .build();
+
+    let device_card = gtk::Frame::new(None);
+    device_card.add_css_class("card");
+    device_card.set_hexpand(true);
+    device_card.set_vexpand(true);
+
+    let card_content = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    card_content.set_margin_top(12);
+    card_content.set_margin_bottom(12);
+    card_content.set_margin_start(16);
+    card_content.set_margin_end(16);
+
+    let card_heading = gtk::Label::new(Some("Detected volumes"));
+    card_heading.add_css_class("heading");
+    card_heading.set_halign(gtk::Align::Start);
+    card_content.append(&card_heading);
+    card_content.append(&scrolled);
+    device_card.set_child(Some(&card_content));
 
     page.append(&heading);
     page.append(&subtitle);
     page.append(&toolbar);
-    page.append(&scrolled);
+    page.append(&device_card);
 
     let table_for_refresh = table.clone();
     let status_for_refresh = status.clone();
@@ -510,82 +529,153 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
         .and_then(Value::as_u64)
         .map(format_gigabytes)
         .unwrap_or_else(|| "—".to_string());
-    let mountpoint = device_mountpoint(device).unwrap_or_else(|| "—".to_string());
+    let mountpoint = device_mountpoint(device);
+    let destination = destination_status(device);
 
-    let mountpoint_display = if mountpoint.starts_with('/') && mountpoint != "/" {
-        Path::new(&mountpoint)
-            .file_name()
-            .and_then(|name| name.to_str())
-            .filter(|name| !name.is_empty())
-            .unwrap_or(&mountpoint)
-            .to_string()
-    } else {
-        mountpoint.clone()
-    };
-
-    let destination = destination_status(device).to_string();
-    let values = [
+    let text_values = [
         path,
         kind,
         filesystem,
         size,
         available,
-        mountpoint_display,
-        destination,
     ];
-    for (column, (value, (_, width))) in values.into_iter().zip(STORAGE_COLUMNS.iter()).enumerate()
-    {
+
+    for (column, value) in text_values.into_iter().enumerate() {
         let label = gtk::Label::new(Some(&value));
-        label.set_halign(if column == 3 || column == 4 {
-            gtk::Align::End
-        } else {
-            gtk::Align::Start
-        });
-        label.set_xalign(if column == 3 || column == 4 { 1.0 } else { 0.0 });
-        if column == 3 || column == 4 {
+        let numeric = column == 3 || column == 4;
+        label.set_halign(if numeric { gtk::Align::End } else { gtk::Align::Start });
+        label.set_xalign(if numeric { 1.0 } else { 0.0 });
+        if numeric {
             label.add_css_class("numeric");
         }
-        label.set_width_request(*width);
-        label.set_hexpand(column == STORAGE_COLUMNS.len() - 1);
+        label.set_width_request(STORAGE_COLUMNS[column].1);
         label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-
-        if column == 5 && mountpoint != "—" {
-            label.set_tooltip_text(Some(&mountpoint));
-        }
-        if column == 6 {
-            let explanation = match value.as_str() {
-                "Potential device" => {
-                    "Volume type and filesystem look suitable. Choose a destination directory; write permissions and source-volume conflicts must still be checked."
-                }
-                "Unsupported volume type" => {
-                    "This block-device type is not eligible as a backup destination."
-                }
-                "Swap volume" => "Swap space is never a backup destination.",
-                "Boot/system partition" => {
-                    "EFI, BIOS boot, reserved and swap partition types are excluded."
-                }
-                "Boot volume" => "Boot and EFI mount points are excluded from backup destinations.",
-                "Volume container" => {
-                    "This is a storage container or RAID/LUKS member, not a mounted data filesystem."
-                }
-                "System root" => "The running system root is not accepted as a backup destination.",
-                "Verify filesystem" => {
-                    "Filesystem support for the required snapshot features is not confirmed."
-                }
-                "Check free space" => "Available space could not be determined.",
-                "Mount not verified" => "The mount status could not be verified.",
-                "Mount mode unknown" => {
-                    "The mount options do not clearly indicate read-write access."
-                }
-                "No free space" => "The filesystem reports no available space.",
-                "Read-only" => "The filesystem is mounted read-only.",
-                _ => "The filesystem is not mounted.",
-            };
-            label.set_tooltip_text(Some(explanation));
-        }
-        label.set_margin_top(10);
-        label.set_margin_bottom(10);
+        label.set_margin_top(8);
+        label.set_margin_bottom(8);
         table.attach(&label, column as i32, row_index, 1, 1);
+    }
+
+    let mountpoint_text = mountpoint.as_deref().unwrap_or("Not mounted");
+    let mount_description = match mountpoint.as_deref() {
+        Some(path) => format!("This volume is mounted at:\n{path}"),
+        None => "This volume is not currently mounted.".to_string(),
+    };
+    let mount_icon = if mountpoint.is_some() {
+        "folder-symbolic"
+    } else {
+        "drive-harddisk-symbolic"
+    };
+    let mount_button = make_detail_button(
+        mount_icon,
+        "Show mount information",
+        "Mount information",
+        &mount_description,
+    );
+    mount_button.set_width_request(STORAGE_COLUMNS[5].1);
+    mount_button.set_halign(gtk::Align::Start);
+    mount_button.set_margin_top(4);
+    mount_button.set_margin_bottom(4);
+    mount_button.set_tooltip_text(Some(mountpoint_text));
+    table.attach(&mount_button, 5, row_index, 1, 1);
+
+    let explanation = destination_explanation(destination);
+    let (status_icon, status_css) = destination_icon(destination);
+    let status_button = make_detail_button(
+        status_icon,
+        "Show destination assessment details",
+        destination,
+        explanation,
+    );
+    status_button.add_css_class(status_css);
+    status_button.set_width_request(STORAGE_COLUMNS[6].1);
+    status_button.set_halign(gtk::Align::Start);
+    status_button.set_margin_top(4);
+    status_button.set_margin_bottom(4);
+    table.attach(&status_button, 6, row_index, 1, 1);
+}
+
+fn make_detail_button(
+    icon_name: &str,
+    tooltip: &str,
+    title: &str,
+    description: &str,
+) -> gtk::MenuButton {
+    let button = gtk::MenuButton::new();
+    button.set_icon_name(icon_name);
+    button.set_tooltip_text(Some(tooltip));
+    button.add_css_class("flat");
+
+    let popover = gtk::Popover::new();
+    popover.set_has_arrow(true);
+
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    content.set_margin_top(12);
+    content.set_margin_bottom(12);
+    content.set_margin_start(14);
+    content.set_margin_end(14);
+    content.set_width_request(260);
+
+    let heading = gtk::Label::new(Some(title));
+    heading.add_css_class("heading");
+    heading.set_halign(gtk::Align::Start);
+    heading.set_wrap(true);
+
+    let details = gtk::Label::new(Some(description));
+    details.set_halign(gtk::Align::Start);
+    details.set_xalign(0.0);
+    details.set_wrap(true);
+    details.set_selectable(true);
+
+    content.append(&heading);
+    content.append(&details);
+    popover.set_child(Some(&content));
+    button.set_popover(Some(&popover));
+    button
+}
+
+fn destination_icon(status: &str) -> (&'static str, &'static str) {
+    match status {
+        "Potential device" => ("dialog-information-symbolic", "suggested-action"),
+        "Unsupported volume type"
+        | "Swap volume"
+        | "Boot/system partition"
+        | "Boot volume"
+        | "Volume container"
+        | "System root"
+        | "Read-only"
+        | "No free space" => ("dialog-error-symbolic", "error"),
+        _ => ("dialog-warning-symbolic", "warning"),
+    }
+}
+
+fn destination_explanation(status: &str) -> &'static str {
+    match status {
+        "Potential device" => {
+            "The volume type and filesystem appear suitable. Select a destination directory before checking write permissions and whether this filesystem also contains source data."
+        }
+        "Unsupported volume type" => {
+            "This block-device type is not eligible as a backup destination."
+        }
+        "Swap volume" => "Swap space is never a backup destination.",
+        "Boot/system partition" => {
+            "EFI, BIOS boot, reserved and swap partition types are excluded."
+        }
+        "Boot volume" => "Boot and EFI mount points are excluded from backup destinations.",
+        "Volume container" => {
+            "This is a storage container or RAID/LUKS member, not a mounted data filesystem."
+        }
+        "System root" => "The running system root is not accepted as a backup destination.",
+        "Verify filesystem" => {
+            "Filesystem support for the required snapshot features is not confirmed."
+        }
+        "Check free space" => "Available space could not be determined.",
+        "Mount not verified" => "The mount status could not be verified.",
+        "Mount mode unknown" => {
+            "The mount options do not clearly indicate read-write access."
+        }
+        "No free space" => "The filesystem reports no available space.",
+        "Read-only" => "The filesystem is mounted read-only.",
+        _ => "The filesystem is not mounted.",
     }
 }
 
