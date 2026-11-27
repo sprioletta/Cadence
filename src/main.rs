@@ -1611,8 +1611,12 @@ fn make_exclusion_editor(
                     drop(current);
                     on_change_for_remove(updated);
                     if let Some(parent) = list_row.parent() {
-                        if let Ok(list_box) = parent.downcast::<gtk::ListBox>() {
-                            list_box.remove(&list_row);
+                        if let Ok(list_row_widget) = parent.downcast::<gtk::ListBoxRow>() {
+                            if let Some(list_parent) = list_row_widget.parent() {
+                                if let Ok(list_box) = list_parent.downcast::<gtk::ListBox>() {
+                                    list_box.remove(&list_row_widget);
+                                }
+                            }
                         }
                     }
                 });
