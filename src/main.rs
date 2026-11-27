@@ -235,19 +235,23 @@ fn make_storage_page() -> gtk::Box {
     column_header.set_margin_end(12);
     column_header.set_margin_top(8);
     column_header.set_margin_bottom(8);
-    for title in [
-        "Device",
-        "Type",
-        "Filesystem",
-        "Size",
-        "Available",
-        "Mounted at",
-    ] {
+    for (index, (title, width)) in [
+        ("Device", 16),
+        ("Type", 8),
+        ("Filesystem", 10),
+        ("Size", 10),
+        ("Available", 10),
+        ("Mounted at", 28),
+    ]
+    .iter()
+    .enumerate()
+    {
         let label = gtk::Label::new(Some(title));
         label.add_css_class("caption");
         label.add_css_class("dim-label");
         label.set_halign(gtk::Align::Start);
-        label.set_hexpand(true);
+        label.set_width_chars(*width);
+        label.set_hexpand(index == 5);
         column_header.append(&label);
     }
 
@@ -381,20 +385,31 @@ fn make_device_row(device: &Value) -> gtk::ListBoxRow {
         })
         .unwrap_or_else(|| "—".to_string());
 
-    for (value, width) in [
+    let is_partition = kind == "part";
+    for (index, (value, width)) in [
         (path, 16),
         (kind, 8),
         (filesystem, 10),
         (size, 10),
         (available, 10),
-        (mountpoint, 18),
-    ] {
+        (mountpoint.clone(), 28),
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let label = gtk::Label::new(Some(&value));
         label.set_halign(gtk::Align::Start);
         label.set_xalign(0.0);
-        label.set_hexpand(true);
+        label.set_hexpand(index == 5);
         label.set_width_chars(width);
         label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+
+        if index == 0 && is_partition {
+            label.set_margin_start(16);
+        }
+        if index == 5 && mountpoint != "—" {
+            label.set_tooltip_text(Some(&mountpoint));
+        }
         row.append(&label);
     }
 
