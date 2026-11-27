@@ -13,7 +13,7 @@
 - Rust
 - GTK4 and libadwaita for the desktop UI
 - RSYNC invoked as a subprocess for backup operations
-- TOML for configuration (when configuration is introduced)
+- JSON for the initial user configuration, stored under the XDG user config directory
 - PolicyKit for narrowly scoped privileged operations, when required
 
 ## Architectural boundaries
