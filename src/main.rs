@@ -1,5 +1,4 @@
 use adw::prelude::*;
-use gtk::prelude::*;
 
 fn main() {
     let application = adw::Application::builder()
