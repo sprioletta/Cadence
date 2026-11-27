@@ -568,9 +568,7 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
                 "Volume container" => {
                     "This is a storage container or RAID/LUKS member, not a mounted data filesystem."
                 }
-                "System root" => {
-                    "The running system root is not accepted as a backup destination."
-                }
+                "System root" => "The running system root is not accepted as a backup destination.",
                 "Verify filesystem" => {
                     "Filesystem support for the required snapshot features is not confirmed."
                 }
@@ -824,15 +822,7 @@ mod tests {
     fn storage_containers_are_not_destinations() {
         for filesystem in ["LVM2_member", "linux_raid_member", "crypto_LUKS"] {
             assert_eq!(
-                assess(
-                    Some("part"),
-                    Some(filesystem),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                ),
+                assess(Some("part"), Some(filesystem), None, None, None, None, None,),
                 "Volume container"
             );
         }
