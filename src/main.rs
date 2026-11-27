@@ -536,22 +536,20 @@ fn append_storage_header(
         let numeric_column = column == 3 || column == 4;
         header_label.add_css_class("heading");
         header_label.set_halign(gtk::Align::Fill);
+        header_label.set_hexpand(true);
         header_label.set_xalign(if numeric_column { 1.0 } else { 0.0 });
+        header_label.set_size_request(*width, -1);
+        header_label.set_margin_top(8);
+        header_label.set_margin_bottom(8);
+        header_label.set_tooltip_text(Some(&format!("Sort by {title}")));
 
-        let button = gtk::Button::new();
-        button.set_child(Some(&header_label));
-        button.add_css_class("flat");
-        button.set_halign(gtk::Align::Fill);
-        button.set_hexpand(true);
-        button.set_size_request(*width, -1);
-        button.set_margin_top(4);
-        button.set_margin_bottom(4);
-        button.set_tooltip_text(Some(&format!("Sort by {title}")));
-
+        // A click gesture keeps the header text on the same alignment axis as data labels.
+        // Unlike GtkButton, GtkLabel adds no internal CSS padding around the title.
         let table_weak = table_for_sort.downgrade();
         let status_weak = status_for_sort.downgrade();
         let sort_state = sort_state.clone();
-        button.connect_clicked(move |_| {
+        let gesture = gtk::GestureClick::new();
+        gesture.connect_released(move |_, _, _, _| {
             if let (Some(table), Some(status)) = (table_weak.upgrade(), status_weak.upgrade()) {
                 let next_sort = match *sort_state.borrow() {
                     Some((current_column, ascending)) if current_column == column => {
@@ -563,8 +561,9 @@ fn append_storage_header(
                 refresh_storage(&table, &status, &sort_state);
             }
         });
+        header_label.add_controller(gesture);
 
-        table.attach(&button, column as i32, 0, 1, 1);
+        table.attach(&header_label, column as i32, 0, 1, 1);
     }
 }
 
