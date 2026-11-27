@@ -237,12 +237,12 @@ fn make_storage_page() -> gtk::Box {
     column_header.set_margin_top(8);
     column_header.set_margin_bottom(8);
     for (index, (title, width)) in [
-        ("Device", 16),
-        ("Type", 8),
-        ("Filesystem", 10),
-        ("Size", 10),
-        ("Available", 10),
-        ("Mounted at", 1),
+        ("Device", 132),
+        ("Type", 60),
+        ("Filesystem", 90),
+        ("Size", 90),
+        ("Available", 100),
+        ("Mounted at", 120),
     ]
     .iter()
     .enumerate()
@@ -251,10 +251,15 @@ fn make_storage_page() -> gtk::Box {
         label.add_css_class("caption");
         label.add_css_class("dim-label");
         label.set_halign(gtk::Align::Start);
-        label.set_width_chars(*width);
-        if index == 5 {
-            label.set_max_width_chars(40);
-        }
+        label.set_width_request(*width);
+        label.set_max_width_chars(match index {
+            0 => 16,
+            1 => 8,
+            2 => 10,
+            3 => 10,
+            4 => 10,
+            _ => 40,
+        });
         label.set_hexpand(index == 5);
         column_header.append(&label);
     }
@@ -402,12 +407,12 @@ fn make_device_row(device: &Value) -> gtk::ListBoxRow {
 
     let is_partition = kind == "part";
     for (index, (value, width)) in [
-        (path, 16),
-        (kind, 8),
-        (filesystem, 10),
-        (size, 10),
-        (available, 10),
-        (mountpoint_display, 1),
+        (path, 132),
+        (kind, 60),
+        (filesystem, 90),
+        (size, 90),
+        (available, 100),
+        (mountpoint_display, 120),
     ]
     .into_iter()
     .enumerate()
@@ -416,10 +421,15 @@ fn make_device_row(device: &Value) -> gtk::ListBoxRow {
         label.set_halign(gtk::Align::Start);
         label.set_xalign(0.0);
         label.set_hexpand(index == 5);
-        label.set_width_chars(width);
-        if index == 5 {
-            label.set_max_width_chars(40);
-        }
+        label.set_width_request(width);
+        label.set_max_width_chars(match index {
+            0 => 16,
+            1 => 8,
+            2 => 10,
+            3 => 10,
+            4 => 10,
+            _ => 40,
+        });
         label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
 
         if index == 0 && is_partition {
