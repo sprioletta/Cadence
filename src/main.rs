@@ -1587,7 +1587,7 @@ fn make_exclusion_editor(
             while let Some(child) = list.first_child() {
                 list.remove(&child);
             }
-            for (index, path) in paths.borrow().iter().enumerate() {
+            for path in paths.borrow().iter() {
                 let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
                 row.set_margin_top(6);
                 row.set_margin_bottom(6);
@@ -1602,17 +1602,18 @@ fn make_exclusion_editor(
                 remove.set_tooltip_text(Some("Remove exclusion"));
                 let paths_for_remove = paths.clone();
                 let on_change_for_remove = on_change.clone();
-                let render_again = list.clone();
+                let list_row = row.clone();
+                let path_to_remove = path.clone();
                 remove.connect_clicked(move |_| {
                     let mut current = paths_for_remove.borrow_mut();
-                    if index < current.len() {
-                        current.remove(index);
-                    }
+                    current.retain(|existing| existing != &path_to_remove);
                     let updated = current.clone();
                     drop(current);
                     on_change_for_remove(updated);
-                    while let Some(child) = render_again.first_child() {
-                        render_again.remove(&child);
+                    if let Some(parent) = list_row.parent() {
+                        if let Ok(list_box) = parent.downcast::<gtk::ListBox>() {
+                            list_box.remove(&list_row);
+                        }
                     }
                 });
                 row.append(&label);
