@@ -540,7 +540,7 @@ fn append_storage_header(
     status_for_sort: &gtk::Label,
     sort_state: &Rc<RefCell<Option<(usize, bool)>>>,
 ) {
-    for (column, (title, width)) in STORAGE_COLUMNS.iter().enumerate() {
+    for (column, (title, _)) in STORAGE_COLUMNS.iter().enumerate() {
         let label = if let Some((sorted_column, ascending)) = sort {
             if sorted_column == column {
                 format!("{title} {}", if ascending { "↑" } else { "↓" })
