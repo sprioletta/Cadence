@@ -470,6 +470,24 @@ fn create_destination_config(mountpoint: &str, uuid: &str) -> Result<Destination
             "The selected volume is no longer mounted at the expected directory.".to_string(),
         );
     }
+    let mounted_uuid = Command::new("findmnt")
+        .args([
+            "--noheadings",
+            "--output",
+            "UUID",
+            "--target",
+            mountpoint,
+        ])
+        .output()
+        .map_err(|error| format!("Could not verify the mounted filesystem identity: {error}"))?;
+    if !mounted_uuid.status.success() {
+        return Err("Could not verify the filesystem mounted at the selected location.".to_string());
+    }
+    let mounted_uuid = String::from_utf8_lossy(&mounted_uuid.stdout).trim().to_string();
+    if mounted_uuid != uuid {
+        return Err("The filesystem mounted at this location changed. Refresh the device list and try again.".to_string());
+    }
+
     let writable = Command::new("test")
         .args(["-w", mountpoint])
         .status()
@@ -930,21 +948,29 @@ fn append_device_row(
         .map(format_gigabytes)
         .unwrap_or_else(|| "—".to_string());
     let mountpoint = device_mountpoint(device);
+    let selected_config = destination_config.borrow();
     let selected = mountpoint
         .as_deref()
         .map(|current| {
-            destination_config
-                .borrow()
+            selected_config
                 .as_ref()
                 .map(|config| config.mountpoint == current)
                 .unwrap_or(false)
         })
         .unwrap_or(false);
     let destination = if selected {
-        "Selected"
+        match selected_config.as_ref().and_then(|config| config.uuid.as_deref()) {
+            None => "Identity not verified",
+            Some(expected_uuid) => match json_text(device, "uuid").as_deref() {
+                Some(current_uuid) if current_uuid == expected_uuid => "Selected",
+                Some(_) => "Identity mismatch",
+                None => "Identity unavailable",
+            },
+        }
     } else {
         destination_status(device)
     };
+    drop(selected_config);
 
     let text_values = [path, kind, filesystem, size, available];
 
@@ -1002,7 +1028,8 @@ fn append_device_row(
     destination_cell.set_margin_bottom(4);
     status_button.set_halign(gtk::Align::Start);
     destination_cell.append(&status_button);
-    if destination == "Potential device" {
+    let eligible = destination_status(device) == "Potential device";
+    if eligible && destination != "Selected" {
         if let (Some(mountpoint), Some(uuid)) = (mountpoint, json_text(device, "uuid")) {
             let select = gtk::Button::with_label("Use");
             select.add_css_class("flat");
@@ -1106,7 +1133,16 @@ fn destination_icon(status: &str) -> (&'static str, &'static str) {
 fn destination_explanation(status: &str) -> &'static str {
     match status {
         "Selected" => {
-            "This volume is the currently selected destination for Cadence snapshots."
+            "This volume is the currently selected destination for Cadence snapshots. Its current validation result is shown in the Backup destination panel."
+        }
+        "Identity not verified" => {
+            "This saved destination predates filesystem identity tracking. Select Use again to record and verify its filesystem UUID."
+        }
+        "Identity mismatch" => {
+            "A different filesystem is currently mounted at the saved mount point. Select Use to explicitly associate this mounted filesystem, or reconnect the original volume."
+        }
+        "Identity unavailable" => {
+            "The mounted filesystem does not expose a readable UUID, so Cadence cannot safely confirm its identity."
         }
         "Potential device" => {
             "The volume type and filesystem appear suitable. Select a destination directory before checking write permissions and whether this filesystem also contains source data."
