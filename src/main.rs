@@ -256,7 +256,7 @@ fn make_storage_page() -> gtk::Box {
     destination_info.set_xalign(0.0);
     destination_info.set_wrap(true);
     destination_info.add_css_class("dim-label");
-    update_destination_info(&destination_info, destination_config.borrow().as_ref());
+    destination_info.set_text("Checking active backup destination…");
 
     let destination_card = gtk::Frame::new(None);
     destination_card.add_css_class("card");
@@ -427,11 +427,16 @@ append_storage_header(
         }
     }
 
-    update_destination_info(destination_info, destination_config.borrow().as_ref());
     let validation = destination_config
         .borrow()
         .as_ref()
         .map(|config| validate_destination(config, &devices));
+    update_destination_info(
+        destination_info,
+        destination_config.borrow().as_ref(),
+        &devices,
+        validation.as_deref(),
+    );
     destination_result.set_text(
         validation.as_deref().unwrap_or("No active backup destination is configured."),
     );
@@ -589,14 +594,48 @@ fn save_destination_config(config: &DestinationConfig) -> Result<(), String> {
     Ok(())
 }
 
-fn update_destination_info(label: &gtk::Label, config: Option<&DestinationConfig>) {
-    match config {
-        Some(config) => label.set_text(&format!(
-            "Volume: {}\nBackup folder: {}",
-            config.mountpoint, config.path
-        )),
-        None => label.set_text("Not configured. Choose “Use” beside an eligible volume below."),
-    }
+fn update_destination_info(
+    label: &gtk::Label,
+    config: Option<&DestinationConfig>,
+    devices: &[Value],
+    validation: Option<&str>,
+) {
+    let Some(config) = config else {
+        label.set_text(
+            "Status: Not configured\nVolume: —\nMount point: —\nSnapshot directory: —\nAvailable space: —",
+        );
+        return;
+    };
+
+    let active = validation.is_some_and(|result| result.starts_with("Valid —"));
+    let mounted_device = devices.iter().find(|device| {
+        device_mountpoint(device).as_deref() == Some(config.mountpoint.as_str())
+    });
+    let verified_device = mounted_device.filter(|device| {
+        config.uuid.as_deref().is_some_and(|expected_uuid| {
+            json_text(device, "uuid").as_deref() == Some(expected_uuid)
+        })
+    });
+
+    let volume = verified_device
+        .and_then(|device| json_text(device, "path").or_else(|| json_text(device, "name")))
+        .unwrap_or_else(|| match mounted_device {
+            Some(_) => "Identity not verified".to_string(),
+            None => "Unavailable".to_string(),
+        });
+    let available_space = verified_device
+        .and_then(|device| device.get("fsavail").and_then(Value::as_u64))
+        .map(|bytes| format!("{} GB", format_gigabytes(bytes)))
+        .unwrap_or_else(|| "—".to_string());
+
+    label.set_text(&format!(
+        "Status: {}\nVolume: {}\nMount point: {}\nSnapshot directory: {}\nAvailable space: {}",
+        if active { "Active" } else { "Unavailable" },
+        volume,
+        config.mountpoint,
+        config.path,
+        available_space,
+    ));
 }
 
 fn validate_destination(config: &DestinationConfig, devices: &[Value]) -> String {
@@ -1054,7 +1093,6 @@ fn append_device_row(
                     Ok(config) => match save_destination_config(&config) {
                         Ok(()) => {
                             *config_state.borrow_mut() = Some(config.clone());
-                            update_destination_info(&info_label, Some(&config));
                             result_label.set_text("Destination successfully set as the active backup destination.");
                             refresh_storage(
                                 &table_for_selection,
