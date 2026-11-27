@@ -517,12 +517,9 @@ fn collect_devices(device: &Value, devices: &mut Vec<Value>) {
     }
 }
 
-fn storage_column_alignment(column: usize) -> f32 {
-    match column {
-        3 | 4 => 1.0,
-        5 | 6 => 0.5,
-        _ => 0.0,
-    }
+fn storage_column_alignment(_column: usize) -> f32 {
+    // Every heading and every value starts at the same left edge.
+    0.0
 }
 
 fn storage_cell(column: usize) -> gtk::Box {
@@ -678,7 +675,7 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
     let mount_cell = storage_cell(5);
     mount_cell.set_margin_top(4);
     mount_cell.set_margin_bottom(4);
-    mount_button.set_halign(gtk::Align::Center);
+    mount_button.set_halign(gtk::Align::Start);
     mount_button.set_tooltip_text(Some(mountpoint_text));
     mount_cell.append(&mount_button);
     table.attach(&mount_cell, 5, row_index, 1, 1);
@@ -694,7 +691,7 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
     let destination_cell = storage_cell(6);
     destination_cell.set_margin_top(4);
     destination_cell.set_margin_bottom(4);
-    status_button.set_halign(gtk::Align::Center);
+    status_button.set_halign(gtk::Align::Start);
     destination_cell.append(&status_button);
     table.attach(&destination_cell, 6, row_index, 1, 1);
 }
