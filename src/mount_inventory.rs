@@ -55,9 +55,11 @@ pub fn parse_mountinfo(contents: &str) -> Result<Vec<MountRecord>, String> {
             continue;
         }
 
-        mounts.push(parse_mountinfo_line(line).map_err(|error| {
-            format!("Invalid mountinfo entry on line {}: {error}", index + 1)
-        })?);
+        mounts.push(
+            parse_mountinfo_line(line).map_err(|error| {
+                format!("Invalid mountinfo entry on line {}: {error}", index + 1)
+            })?,
+        );
     }
 
     Ok(mounts)
@@ -88,7 +90,10 @@ fn parse_mountinfo_line(line: &str) -> Result<MountRecord, String> {
         root: PathBuf::from(decode_mount_field(before[3])),
         mount_point: PathBuf::from(decode_mount_field(before[4])),
         mount_options: split_options(before[5]),
-        optional_fields: before[6..].iter().map(|field| (*field).to_string()).collect(),
+        optional_fields: before[6..]
+            .iter()
+            .map(|field| (*field).to_string())
+            .collect(),
         filesystem: after[0].to_string(),
         source: decode_mount_field(after[1]),
         super_options: split_options(after[2]),
@@ -136,9 +141,10 @@ pub fn classify_mount(
         MountRole::SystemRoot
     } else if is_boot_path(mount_point) {
         MountRole::Boot
-    } else if user_home_directories.iter().any(|home| {
-        mount_point.starts_with(home) || home.starts_with(mount_point)
-    }) {
+    } else if user_home_directories
+        .iter()
+        .any(|home| mount_point.starts_with(home) || home.starts_with(mount_point))
+    {
         MountRole::UserData
     } else if is_external_path(mount_point) {
         MountRole::External
@@ -165,16 +171,15 @@ pub fn classify_mounts(
 
 fn classify_filesystem(filesystem: &str) -> FilesystemClass {
     match filesystem {
-        "proc" | "sysfs" | "devtmpfs" | "devpts" | "tmpfs" | "cgroup" | "cgroup2"
-        | "pstore" | "securityfs" | "debugfs" | "tracefs" | "configfs" | "mqueue"
-        | "hugetlbfs" | "rpc_pipefs" | "autofs" | "bpf" | "efivarfs" | "fusectl" => {
-            FilesystemClass::Virtual
+        "proc" | "sysfs" | "devtmpfs" | "devpts" | "tmpfs" | "cgroup" | "cgroup2" | "pstore"
+        | "securityfs" | "debugfs" | "tracefs" | "configfs" | "mqueue" | "hugetlbfs"
+        | "rpc_pipefs" | "autofs" | "bpf" | "efivarfs" | "fusectl" => FilesystemClass::Virtual,
+        "nfs" | "nfs4" | "cifs" | "smb3" | "9p" | "ceph" | "glusterfs" | "afs" | "davfs"
+        | "sshfs" => FilesystemClass::Network,
+        "ext2" | "ext3" | "ext4" | "xfs" | "btrfs" | "vfat" | "fat" | "msdos" | "exfat"
+        | "ntfs" | "ntfs3" | "f2fs" | "zfs" | "reiserfs" | "jfs" | "bcachefs" | "iso9660" => {
+            FilesystemClass::Local
         }
-        "nfs" | "nfs4" | "cifs" | "smb3" | "9p" | "ceph" | "glusterfs" | "afs"
-        | "davfs" | "sshfs" => FilesystemClass::Network,
-        "ext2" | "ext3" | "ext4" | "xfs" | "btrfs" | "vfat" | "fat" | "msdos"
-        | "exfat" | "ntfs" | "ntfs3" | "f2fs" | "zfs" | "reiserfs" | "jfs"
-        | "bcachefs" | "iso9660" => FilesystemClass::Local,
         _ => FilesystemClass::Unknown,
     }
 }
