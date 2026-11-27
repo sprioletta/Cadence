@@ -13,6 +13,105 @@ struct DestinationConfig {
     uuid: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct BackupConfig {
+    system_enabled: bool,
+    user_data_enabled: bool,
+    user_data_mode: String,
+    selected_users: Vec<String>,
+    custom_exclusions: Vec<String>,
+}
+
+impl Default for BackupConfig {
+    fn default() -> Self {
+        Self {
+            system_enabled: true,
+            user_data_enabled: true,
+            user_data_mode: "all".to_string(),
+            selected_users: Vec::new(),
+            custom_exclusions: Vec::new(),
+        }
+    }
+}
+
+impl BackupConfig {
+    fn from_json(value: &Value) -> Self {
+        let defaults = Self::default();
+        let Some(backup) = value.get("backup") else {
+            return defaults;
+        };
+        let user_data_mode = backup
+            .get("user_data")
+            .and_then(|value| value.get("include_mode"))
+            .and_then(Value::as_str)
+            .filter(|mode| matches!(*mode, "all" | "hidden_only" | "none"))
+            .unwrap_or("all")
+            .to_string();
+        let selected_users = backup
+            .get("user_data")
+            .and_then(|value| value.get("home_directories"))
+            .and_then(Value::as_array)
+            .map(|items| items.iter().filter_map(Value::as_str).map(str::to_string).collect())
+            .unwrap_or_default();
+        let custom_exclusions = backup
+            .get("exclusions")
+            .and_then(|value| value.get("custom_paths"))
+            .and_then(Value::as_array)
+            .map(|items| items.iter().filter_map(Value::as_str).map(str::to_string).collect())
+            .unwrap_or_default();
+        Self {
+            system_enabled: backup
+                .get("system")
+                .and_then(|value| value.get("enabled"))
+                .and_then(Value::as_bool)
+                .unwrap_or(defaults.system_enabled),
+            user_data_enabled: backup
+                .get("user_data")
+                .and_then(|value| value.get("enabled"))
+                .and_then(Value::as_bool)
+                .unwrap_or(defaults.user_data_enabled),
+            user_data_mode,
+            selected_users,
+            custom_exclusions,
+        }
+    }
+
+    fn to_json(&self) -> Value {
+        serde_json::json!({
+            "mode": "system",
+            "method": "rsync",
+            "system": {
+                "enabled": self.system_enabled,
+                "sources": ["/"]
+            },
+            "user_data": {
+                "enabled": self.user_data_enabled,
+                "include_mode": self.user_data_mode,
+                "home_directories": self.selected_users
+            },
+            "exclusions": {
+                "system_defaults": true,
+                "custom_paths": self.custom_exclusions
+            }
+        })
+    }
+}
+
+fn destination_from_json(value: &Value) -> Option<DestinationConfig> {
+    let destination = value.get("destination").unwrap_or(value);
+    let mountpoint = destination.get("mountpoint")?.as_str()?.to_string();
+    let path = destination.get("path")?.as_str()?.to_string();
+    if Path::new(&path) != destination_path_for(&mountpoint) {
+        return None;
+    }
+    let uuid = destination
+        .get("uuid")
+        .and_then(Value::as_str)
+        .filter(|uuid| !uuid.trim().is_empty())
+        .map(str::to_string);
+    Some(DestinationConfig { mountpoint, path, uuid })
+}
+
 const STORAGE_COLUMNS: [(&str, i32); 7] = [
     ("Device", 132),
     ("Type", 60),
@@ -549,21 +648,7 @@ fn create_destination_config(mountpoint: &str, uuid: &str) -> Result<Destination
 fn load_destination_config() -> Option<DestinationConfig> {
     let content = fs::read_to_string(destination_config_file()).ok()?;
     let value: Value = serde_json::from_str(&content).ok()?;
-    let mountpoint = value.get("mountpoint")?.as_str()?.to_string();
-    let path = value.get("path")?.as_str()?.to_string();
-    if Path::new(&path) != destination_path_for(&mountpoint) {
-        return None;
-    }
-    let uuid = value
-        .get("uuid")
-        .and_then(Value::as_str)
-        .filter(|uuid| !uuid.trim().is_empty())
-        .map(str::to_string);
-    Some(DestinationConfig {
-        mountpoint,
-        path,
-        uuid,
-    })
+    destination_from_json(&value)
 }
 
 fn save_destination_config(config: &DestinationConfig) -> Result<(), String> {
@@ -579,11 +664,19 @@ fn save_destination_config(config: &DestinationConfig) -> Result<(), String> {
     fs::create_dir_all(directory)
         .map_err(|error| format!("Could not create configuration directory: {error}"))?;
     let temporary = file.with_extension("json.tmp");
-    let content = serde_json::json!({
+    let mut content = fs::read_to_string(&file)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .filter(Value::is_object)
+        .unwrap_or_else(|| serde_json::json!({}));
+    let backup = BackupConfig::from_json(&content);
+    content["schema_version"] = serde_json::json!(1);
+    content["destination"] = serde_json::json!({
         "mountpoint": config.mountpoint,
         "path": config.path,
         "uuid": config.uuid,
     });
+    content["backup"] = backup.to_json();
     fs::write(
         &temporary,
         serde_json::to_vec_pretty(&content).map_err(|error| error.to_string())?,
@@ -1328,7 +1421,7 @@ fn add_nav_button(
 
 #[cfg(test)]
 mod tests {
-    use super::{assess_destination, destination_path_for};
+    use super::{assess_destination, destination_from_json, destination_path_for, BackupConfig};
 
     fn assess(
         device_type: Option<&str>,
@@ -1348,6 +1441,53 @@ mod tests {
             options,
             available,
         )
+    }
+
+    
+    #[test]
+    fn backup_configuration_defaults_to_system_and_all_user_data() {
+        let config = BackupConfig::default();
+        assert!(config.system_enabled);
+        assert!(config.user_data_enabled);
+        assert_eq!(config.user_data_mode, "all");
+        assert!(config.selected_users.is_empty());
+    }
+
+    #[test]
+    fn legacy_destination_configuration_remains_readable() {
+        let value = serde_json::json!({
+            "mountpoint": "/media/backup",
+            "path": "/media/backup/cadence-snap",
+            "uuid": "test-uuid"
+        });
+        let config = destination_from_json(&value).unwrap();
+        assert_eq!(config.mountpoint, "/media/backup");
+        assert_eq!(config.uuid.as_deref(), Some("test-uuid"));
+    }
+
+    #[test]
+    fn nested_destination_configuration_is_readable() {
+        let value = serde_json::json!({
+            "schema_version": 1,
+            "destination": {
+                "mountpoint": "/media/backup",
+                "path": "/media/backup/cadence-snap",
+                "uuid": "test-uuid"
+            },
+            "backup": BackupConfig::default().to_json()
+        });
+        let config = destination_from_json(&value).unwrap();
+        assert_eq!(config.path, "/media/backup/cadence-snap");
+    }
+
+    #[test]
+    fn invalid_backup_user_data_mode_falls_back_to_all() {
+        let value = serde_json::json!({
+            "backup": {
+                "user_data": { "include_mode": "unknown" }
+            }
+        });
+        assert_eq!(BackupConfig::from_json(&value).user_data_mode, "all");
     }
 
     #[test]
