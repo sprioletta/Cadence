@@ -320,10 +320,27 @@ fn make_storage_page() -> gtk::Box {
     let config_for_refresh = destination_config.clone();
     let info_for_refresh = destination_info.clone();
     refresh.connect_clicked(move |_| {
-        refresh_storage(&table_for_refresh, &status_for_refresh, &sort_for_refresh, &config_for_refresh, &info_for_refresh);
+refresh_storage(
+            &table_for_refresh,
+            &status_for_refresh,
+            &sort_for_refresh,
+            &config_for_refresh,
+            &info_for_refresh,
+        );
     });
+refresh_storage(
 
-    refresh_storage(&table, &status, &sort_state, &destination_config, &destination_info);
+        &table,
+
+        &status,
+
+        &sort_state,
+
+        &destination_config,
+
+        &destination_info,
+
+    );
     page
 }
 
@@ -338,7 +355,15 @@ fn refresh_storage(
         table.remove(&child);
     }
     let sort = *sort_state.borrow();
-    append_storage_header(table, sort, table, status, sort_state, destination_config, destination_info);
+append_storage_header(
+        table,
+        sort,
+        table,
+        status,
+        sort_state,
+        destination_config,
+        destination_info,
+    );
 
     let output = Command::new("lsblk")
         .args([
@@ -399,16 +424,23 @@ fn refresh_storage(
 
     let count = devices.len();
     for (index, device) in devices.iter().enumerate() {
-        append_device_row(table, device, index as i32 + 1, destination_config, destination_info);
+append_device_row(
+            table,
+            device,
+            index as i32 + 1,
+            destination_config,
+            destination_info,
+        );
     }
     status.set_text(&format!(
         "Found {count} devices and partitions. Information is read-only."
     ));
 }
 
-
 fn destination_config_file() -> PathBuf {
-    gtk::glib::user_config_dir().join("cadence").join("config.json")
+    gtk::glib::user_config_dir()
+        .join("cadence")
+        .join("config.json")
 }
 
 fn destination_path_for(mountpoint: &str) -> PathBuf {
@@ -418,7 +450,9 @@ fn destination_path_for(mountpoint: &str) -> PathBuf {
 fn create_destination_config(mountpoint: &str) -> Result<DestinationConfig, String> {
     let mount = Path::new(mountpoint);
     if !mount.is_absolute() || !mount.is_dir() {
-        return Err("The selected volume is no longer mounted at the expected directory.".to_string());
+        return Err(
+            "The selected volume is no longer mounted at the expected directory.".to_string(),
+        );
     }
     let writable = Command::new("test")
         .args(["-w", mountpoint])
@@ -438,7 +472,10 @@ fn create_destination_config(mountpoint: &str) -> Result<DestinationConfig, Stri
             .status()
             .map_err(|error| format!("Could not verify destination access: {error}"))?;
         if !writable.success() {
-            return Err("The existing cadence-snap directory is not writable by the current user.".to_string());
+            return Err(
+                "The existing cadence-snap directory is not writable by the current user."
+                    .to_string(),
+            );
         }
     }
 
@@ -461,19 +498,28 @@ fn load_destination_config() -> Option<DestinationConfig> {
 
 fn save_destination_config(config: &DestinationConfig) -> Result<(), String> {
     if Path::new(&config.path) != destination_path_for(&config.mountpoint) {
-        return Err("The destination must be cadence-snap at the root of the selected volume.".to_string());
+        return Err(
+            "The destination must be cadence-snap at the root of the selected volume.".to_string(),
+        );
     }
     let file = destination_config_file();
-    let directory = file.parent().ok_or_else(|| "Invalid configuration directory.".to_string())?;
-    fs::create_dir_all(directory).map_err(|error| format!("Could not create configuration directory: {error}"))?;
+    let directory = file
+        .parent()
+        .ok_or_else(|| "Invalid configuration directory.".to_string())?;
+    fs::create_dir_all(directory)
+        .map_err(|error| format!("Could not create configuration directory: {error}"))?;
     let temporary = file.with_extension("json.tmp");
     let content = serde_json::json!({
         "mountpoint": config.mountpoint,
         "path": config.path,
     });
-    fs::write(&temporary, serde_json::to_vec_pretty(&content).map_err(|error| error.to_string())?)
-        .map_err(|error| format!("Could not write destination settings: {error}"))?;
-    fs::rename(&temporary, &file).map_err(|error| format!("Could not finalize destination settings: {error}"))?;
+    fs::write(
+        &temporary,
+        serde_json::to_vec_pretty(&content).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| format!("Could not write destination settings: {error}"))?;
+    fs::rename(&temporary, &file)
+        .map_err(|error| format!("Could not finalize destination settings: {error}"))?;
     Ok(())
 }
 
@@ -481,11 +527,18 @@ fn update_destination_info(label: &gtk::Label, config: Option<&DestinationConfig
     match config {
         Some(config) => {
             let state = if Path::new(&config.mountpoint).is_dir() {
-                if Path::new(&config.path).is_dir() { "Directory exists" } else { "Directory will be created when the repository is initialized" }
+                if Path::new(&config.path).is_dir() {
+                    "Directory exists"
+                } else {
+                    "Directory will be created when the repository is initialized"
+                }
             } else {
                 "Volume currently unavailable"
             };
-            label.set_text(&format!("Volume: {}\nSnapshot directory: {}\n{}", config.mountpoint, config.path, state));
+            label.set_text(&format!(
+                "Volume: {}\nSnapshot directory: {}\n{}",
+                config.mountpoint, config.path, state
+            ));
         }
         None => label.set_text("Not configured. Choose “Use” beside an eligible volume below."),
     }
@@ -707,7 +760,13 @@ fn append_storage_header(
                     _ => Some((column, true)),
                 };
                 *sort_state.borrow_mut() = next_sort;
-                refresh_storage(&table, &status, &sort_state, &destination_config, &destination_info);
+refresh_storage(
+                    &table,
+                    &status,
+                    &sort_state,
+                    &destination_config,
+                    &destination_info,
+                );
             }
         });
         cell.add_controller(gesture);
@@ -846,7 +905,10 @@ fn append_device_row(
                             *config_state.borrow_mut() = Some(config.clone());
                             update_destination_info(&info_label, Some(&config));
                         }
-                        Err(error) => update_destination_error(&info_label, &format!("Could not save destination settings: {error}")),
+                        Err(error) => update_destination_error(
+                            &info_label,
+                            &format!("Could not save destination settings: {error}"),
+                        ),
                     },
                     Err(error) => update_destination_error(&info_label, &error),
                 }
@@ -1069,7 +1131,10 @@ mod tests {
 
     #[test]
     fn snapshot_directory_is_at_the_volume_root() {
-        assert_eq!(destination_path_for("/run/media/user/BACKUP").to_string_lossy(), "/run/media/user/BACKUP/cadence-snap");
+        assert_eq!(
+            destination_path_for("/run/media/user/BACKUP").to_string_lossy(),
+            "/run/media/user/BACKUP/cadence-snap"
+        );
     }
 
     #[test]
