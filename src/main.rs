@@ -10,6 +10,7 @@ const STORAGE_COLUMNS: [(&str, i32); 6] = [
     ("Size (GB)", 90),
     ("Available (GB)", 100),
     ("Mounted at", 120),
+    ("Destination", 132),
 ];
 
 fn main() {
@@ -324,6 +325,116 @@ fn refresh_storage(table: &gtk::Grid, status: &gtk::Label) {
     ));
 }
 
+fn destination_status(device: &Value) -> &'static str {
+    let Some(mountpoint) = device_mountpoint(device) else {
+        return "Not mounted";
+    };
+
+    let filesystem = json_text(device, "fstype");
+    let mount_options = mount_options_for(&mountpoint);
+    let writable = write_access_for(&mountpoint);
+    let available_bytes = device.get("fsavail").and_then(Value::as_u64);
+
+    assess_destination(
+        filesystem.as_deref(),
+        Some(&mountpoint),
+        mount_options.as_deref(),
+        writable,
+        available_bytes,
+    )
+}
+
+fn mount_options_for(mountpoint: &str) -> Option<String> {
+    let output = Command::new("findmnt")
+        .args(["--noheadings", "--output", "OPTIONS", "--target", mountpoint])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let options = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!options.is_empty()).then_some(options)
+}
+
+fn write_access_for(mountpoint: &str) -> Option<bool> {
+    Command::new("test")
+        .arg("-w")
+        .arg(mountpoint)
+        .status()
+        .ok()
+        .map(|status| status.success())
+}
+
+fn assess_destination(
+    filesystem: Option<&str>,
+    mountpoint: Option<&str>,
+    mount_options: Option<&str>,
+    writable: Option<bool>,
+    available_bytes: Option<u64>,
+) -> &'static str {
+    let Some(mountpoint) = mountpoint.filter(|path| !path.is_empty()) else {
+        return "Not mounted";
+    };
+
+    if mountpoint == "/" {
+        return "System root";
+    }
+
+    let Some(options) = mount_options else {
+        return "Mount not verified";
+    };
+
+    let options: Vec<&str> = options.split(',').collect();
+    if options.contains(&"ro") {
+        return "Read-only";
+    }
+    if !options.contains(&"rw") {
+        return "Mount mode unknown";
+    }
+
+    match writable {
+        Some(true) => {}
+        Some(false) => return "No write access",
+        None => return "Access not verified",
+    }
+
+    let filesystem = filesystem.unwrap_or_default().to_ascii_lowercase();
+    if !matches!(
+        filesystem.as_str(),
+        "ext2" | "ext3" | "ext4" | "btrfs" | "xfs" | "f2fs"
+    ) {
+        return "Verify filesystem";
+    }
+
+    match available_bytes {
+        Some(0) => "No free space",
+        Some(_) => "Candidate",
+        None => "Check free space",
+    }
+}
+
+fn device_mountpoint(device: &Value) -> Option<String> {
+    device
+        .get("mountpoints")
+        .and_then(Value::as_array)
+        .and_then(|points| {
+            points
+                .iter()
+                .filter_map(Value::as_str)
+                .find(|point| !point.is_empty())
+        })
+        .map(str::to_string)
+        .or_else(|| {
+            device
+                .get("mountpoints")
+                .and_then(Value::as_str)
+                .filter(|point| !point.is_empty())
+                .map(str::to_string)
+        })
+}
+
 fn collect_devices(device: &Value, devices: &mut Vec<Value>) {
     devices.push(device.clone());
     if let Some(children) = device.get("children").and_then(Value::as_array) {
@@ -369,23 +480,7 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
         .and_then(Value::as_u64)
         .map(format_gigabytes)
         .unwrap_or_else(|| "—".to_string());
-    let mountpoint = device
-        .get("mountpoints")
-        .and_then(Value::as_array)
-        .and_then(|points| {
-            points
-                .iter()
-                .filter_map(Value::as_str)
-                .find(|point| !point.is_empty())
-        })
-        .map(str::to_string)
-        .or_else(|| {
-            device
-                .get("mountpoints")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-        })
-        .unwrap_or_else(|| "—".to_string());
+    let mountpoint = device_mountpoint(device).unwrap_or_else(|| "—".to_string());
 
     let mountpoint_display = if mountpoint.starts_with('/') && mountpoint != "/" {
         Path::new(&mountpoint)
@@ -398,7 +493,16 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
         mountpoint.clone()
     };
 
-    let values = [path, kind, filesystem, size, available, mountpoint_display];
+    let destination = destination_status(device).to_string();
+    let values = [
+        path,
+        kind,
+        filesystem,
+        size,
+        available,
+        mountpoint_display,
+        destination,
+    ];
     for (column, (value, (_, width))) in values.into_iter().zip(STORAGE_COLUMNS.iter()).enumerate()
     {
         let label = gtk::Label::new(Some(&value));
@@ -519,4 +623,65 @@ fn add_nav_button(
 
     sidebar.append(&button);
     button
+}
+
+#[cfg(test)]
+mod tests {
+    use super::assess_destination;
+
+    #[test]
+    fn destination_requires_a_mountpoint() {
+        assert_eq!(
+            assess_destination(Some("ext4"), None, None, None, None),
+            "Not mounted"
+        );
+    }
+
+    #[test]
+    fn system_root_is_not_a_backup_destination() {
+        assert_eq!(
+            assess_destination(Some("ext4"), Some("/"), Some("rw,relatime"), Some(true), Some(10)),
+            "System root"
+        );
+    }
+
+    #[test]
+    fn read_only_mount_is_rejected() {
+        assert_eq!(
+            assess_destination(Some("ext4"), Some("/mnt/backup"), Some("ro,relatime"), Some(false), Some(10)),
+            "Read-only"
+        );
+    }
+
+    #[test]
+    fn destination_requires_write_access() {
+        assert_eq!(
+            assess_destination(Some("ext4"), Some("/mnt/backup"), Some("rw,relatime"), Some(false), Some(10)),
+            "No write access"
+        );
+    }
+
+    #[test]
+    fn unknown_filesystems_require_verification() {
+        assert_eq!(
+            assess_destination(Some("exfat"), Some("/mnt/backup"), Some("rw,relatime"), Some(true), Some(10)),
+            "Verify filesystem"
+        );
+    }
+
+    #[test]
+    fn destination_without_reported_space_is_not_confirmed() {
+        assert_eq!(
+            assess_destination(Some("ext4"), Some("/mnt/backup"), Some("rw,relatime"), Some(true), None),
+            "Check free space"
+        );
+    }
+
+    #[test]
+    fn writable_linux_filesystem_with_space_is_a_candidate() {
+        assert_eq!(
+            assess_destination(Some("ext4"), Some("/mnt/backup"), Some("rw,relatime"), Some(true), Some(10)),
+            "Candidate"
+        );
+    }
 }
