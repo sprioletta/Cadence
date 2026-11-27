@@ -1,5 +1,6 @@
 use adw::prelude::*;
 use serde_json::Value;
+use std::path::Path;
 use std::process::Command;
 
 fn main() {
@@ -388,6 +389,17 @@ fn make_device_row(device: &Value) -> gtk::ListBoxRow {
         })
         .unwrap_or_else(|| "—".to_string());
 
+    let mountpoint_display = if mountpoint.starts_with('/') && mountpoint != "/" {
+        Path::new(&mountpoint)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .filter(|name| !name.is_empty())
+            .unwrap_or(&mountpoint)
+            .to_string()
+    } else {
+        mountpoint.clone()
+    };
+
     let is_partition = kind == "part";
     for (index, (value, width)) in [
         (path, 16),
@@ -395,7 +407,7 @@ fn make_device_row(device: &Value) -> gtk::ListBoxRow {
         (filesystem, 10),
         (size, 10),
         (available, 10),
-        (mountpoint.clone(), 1),
+        (mountpoint_display, 1),
     ]
     .into_iter()
     .enumerate()
