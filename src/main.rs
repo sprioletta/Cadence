@@ -9,8 +9,8 @@ const STORAGE_COLUMNS: [(&str, i32); 7] = [
     ("Filesystem", 90),
     ("Size (GB)", 90),
     ("Available (GB)", 100),
-    ("Mounted at", 120),
-    ("Destination check", 150),
+    ("Mount", 76),
+    ("Destination", 104),
 ];
 
 fn main() {
@@ -247,7 +247,6 @@ fn make_storage_page() -> gtk::Box {
     let scrolled = gtk::ScrolledWindow::builder()
         .hexpand(true)
         .vexpand(true)
-        .min_content_height(280)
         .child(&table)
         .build();
 
@@ -579,14 +578,13 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
     table.attach(&mount_button, 5, row_index, 1, 1);
 
     let explanation = destination_explanation(destination);
-    let (status_icon, status_css) = destination_icon(destination);
+    let (status_icon, _status_css) = destination_icon(destination);
     let status_button = make_detail_button(
         status_icon,
         "Show destination assessment details",
         destination,
         explanation,
     );
-    status_button.add_css_class(status_css);
     status_button.set_width_request(STORAGE_COLUMNS[6].1);
     status_button.set_halign(gtk::Align::Start);
     status_button.set_margin_top(4);
