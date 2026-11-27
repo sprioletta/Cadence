@@ -253,6 +253,9 @@ fn make_storage_page() -> gtk::Box {
         .hexpand(true)
         .child(&table)
         .build();
+    // Keep automatic scrolling for long device lists, but avoid GTK overlay
+    // scrollbars appearing only when the pointer moves over the table.
+    scrolled.set_overlay_scrolling(false);
     scrolled.set_propagate_natural_height(true);
     scrolled.set_max_content_height(440);
 
