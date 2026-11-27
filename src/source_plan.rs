@@ -260,6 +260,17 @@ fn validate_options(options: &SourcePlanOptions) -> Result<(), String> {
         validate_absolute_path(path)?;
     }
 
+    if options
+        .selected_home_directories
+        .iter()
+        .any(|selected| !options.all_home_directories.contains(selected))
+    {
+        return Err(
+            "Explicitly selected user homes must come from the detected local-user list."
+                .to_string(),
+        );
+    }
+
     Ok(())
 }
 
@@ -720,6 +731,15 @@ mod tests {
 
         assert!(source_paths(&plan, BackupScope::UserData).is_empty());
         assert!(plan.warnings.iter().any(|warning| warning.contains("excluded filesystem")));
+    }
+
+    #[test]
+    fn rejects_user_home_paths_not_present_in_the_detected_user_list() {
+        let mut config = options();
+        config.select_users_explicitly = true;
+        config.selected_home_directories = vec![PathBuf::from("/etc")];
+
+        assert!(build_source_plan(&[mount(1, "/", "ext4")], &config).is_err());
     }
 
     #[test]
