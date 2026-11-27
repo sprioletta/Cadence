@@ -10,6 +10,7 @@ use std::rc::Rc;
 struct DestinationConfig {
     mountpoint: String,
     path: String,
+    uuid: Option<String>,
 }
 
 const STORAGE_COLUMNS: [(&str, i32); 7] = [
@@ -255,7 +256,7 @@ fn make_storage_page() -> gtk::Box {
     destination_info.set_xalign(0.0);
     destination_info.set_wrap(true);
     destination_info.add_css_class("dim-label");
-    update_destination_info(&destination_info, destination_config.borrow().as_ref());
+    update_destination_info(&destination_info, destination_config.borrow().as_ref(), None);
 
     let destination_card = gtk::Frame::new(None);
     destination_card.add_css_class("card");
@@ -370,7 +371,7 @@ append_storage_header(
             "--json",
             "--bytes",
             "--output",
-            "NAME,PATH,TYPE,FSTYPE,PARTTYPE,PARTLABEL,SIZE,FSAVAIL,FSUSE%,MOUNTPOINTS,MODEL",
+            "NAME,PATH,TYPE,FSTYPE,UUID,PARTTYPE,PARTLABEL,SIZE,FSAVAIL,FSUSE%,MOUNTPOINTS,MODEL",
         ])
         .output();
 
@@ -404,6 +405,16 @@ append_storage_header(
             collect_devices(device, &mut devices);
         }
     }
+
+    let validation = destination_config
+        .borrow()
+        .as_ref()
+        .map(|config| validate_destination(config, &devices));
+    update_destination_info(
+        destination_info,
+        destination_config.borrow().as_ref(),
+        validation.as_deref(),
+    );
 
     if devices.is_empty() {
         status.set_text("No storage devices or partitions were found.");
@@ -449,7 +460,10 @@ fn destination_path_for(mountpoint: &str) -> PathBuf {
     Path::new(mountpoint).join("cadence-snap")
 }
 
-fn create_destination_config(mountpoint: &str) -> Result<DestinationConfig, String> {
+fn create_destination_config(mountpoint: &str, uuid: &str) -> Result<DestinationConfig, String> {
+    if uuid.trim().is_empty() {
+        return Err("The selected volume does not expose a filesystem UUID; its identity cannot be verified.".to_string());
+    }
     let mount = Path::new(mountpoint);
     if !mount.is_absolute() || !mount.is_dir() {
         return Err(
@@ -484,6 +498,7 @@ fn create_destination_config(mountpoint: &str) -> Result<DestinationConfig, Stri
     Ok(DestinationConfig {
         mountpoint: mountpoint.to_string(),
         path: path.to_string_lossy().into_owned(),
+        uuid: Some(uuid.to_string()),
     })
 }
 
@@ -495,7 +510,16 @@ fn load_destination_config() -> Option<DestinationConfig> {
     if Path::new(&path) != destination_path_for(&mountpoint) {
         return None;
     }
-    Some(DestinationConfig { mountpoint, path })
+    let uuid = value
+        .get("uuid")
+        .and_then(Value::as_str)
+        .filter(|uuid| !uuid.trim().is_empty())
+        .map(str::to_string);
+    Some(DestinationConfig {
+        mountpoint,
+        path,
+        uuid,
+    })
 }
 
 fn save_destination_config(config: &DestinationConfig) -> Result<(), String> {
@@ -514,6 +538,7 @@ fn save_destination_config(config: &DestinationConfig) -> Result<(), String> {
     let content = serde_json::json!({
         "mountpoint": config.mountpoint,
         "path": config.path,
+        "uuid": config.uuid,
     });
     fs::write(
         &temporary,
@@ -525,25 +550,94 @@ fn save_destination_config(config: &DestinationConfig) -> Result<(), String> {
     Ok(())
 }
 
-fn update_destination_info(label: &gtk::Label, config: Option<&DestinationConfig>) {
+fn update_destination_info(
+    label: &gtk::Label,
+    config: Option<&DestinationConfig>,
+    validation: Option<&str>,
+) {
     match config {
         Some(config) => {
-            let state = if Path::new(&config.mountpoint).is_dir() {
-                if Path::new(&config.path).is_dir() {
-                    "Directory exists"
-                } else {
-                    "Directory will be created when the repository is initialized"
-                }
+            let directory_state = if Path::new(&config.path).is_dir() {
+                "Directory exists"
             } else {
-                "Volume currently unavailable"
+                "Directory will be created when the repository is initialized"
             };
+            let identity = config.uuid.as_deref().unwrap_or("Not recorded");
+            let validation = validation.unwrap_or_else(|| {
+                if config.uuid.is_some() {
+                    "Validation pending"
+                } else {
+                    "Identity not verified — select this volume again with Use"
+                }
+            });
             label.set_text(&format!(
-                "Volume: {}\nSnapshot directory: {}\n{}",
-                config.mountpoint, config.path, state
+                "Volume: {}\nFilesystem UUID: {}\nSnapshot directory: {}\n{}\n{}",
+                config.mountpoint, identity, config.path, directory_state, validation
             ));
         }
         None => label.set_text("Not configured. Choose “Use” beside an eligible volume below."),
     }
+}
+
+fn validate_destination(config: &DestinationConfig, devices: &[Value]) -> String {
+    let Some(expected_uuid) = config.uuid.as_deref() else {
+        return "Identity not verified — select this volume again with Use".to_string();
+    };
+
+    let Some(device) = devices.iter().find(|device| {
+        device_mountpoint(device).as_deref() == Some(config.mountpoint.as_str())
+    }) else {
+        return "Volume unavailable — the configured mount point is not present".to_string();
+    };
+
+    let Some(current_uuid) = json_text(device, "uuid") else {
+        return "Identity could not be verified — the mounted volume has no readable UUID".to_string();
+    };
+    if current_uuid != expected_uuid {
+        return "Identity mismatch — a different filesystem is mounted at this location".to_string();
+    }
+
+    let assessment = destination_status(device);
+    match assessment {
+        "Read-only" => return "Read-only — the volume is not writable".to_string(),
+        "No free space" => return "Insufficient space — the filesystem reports no free space".to_string(),
+        "Check free space" => return "Free space unknown — capacity could not be verified".to_string(),
+        "Mount not verified" | "Mount mode unknown" => {
+            return "Mount access could not be verified".to_string()
+        }
+        "Potential device" => {}
+        other => return format!("Volume is not eligible: {other}"),
+    }
+
+    if !Path::new(&config.mountpoint).is_dir() {
+        return "Volume unavailable — the mount directory no longer exists".to_string();
+    }
+
+    let writable = Command::new("test")
+        .args(["-w", &config.mountpoint])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false);
+    if !writable {
+        return "Not writable — the current user cannot write to the volume".to_string();
+    }
+
+    let destination = Path::new(&config.path);
+    if destination.exists() {
+        if !destination.is_dir() {
+            return "Invalid destination — cadence-snap exists but is not a directory".to_string();
+        }
+        let writable = Command::new("test")
+            .args(["-w", &config.path])
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+        if !writable {
+            return "Not writable — the cadence-snap directory cannot be written".to_string();
+        }
+    }
+
+    "Valid — volume identity, mount, permissions and available space verified".to_string()
 }
 
 fn update_destination_error(label: &gtk::Label, error: &str) {
@@ -909,7 +1003,7 @@ fn append_device_row(
     status_button.set_halign(gtk::Align::Start);
     destination_cell.append(&status_button);
     if destination == "Potential device" {
-        if let Some(mountpoint) = mountpoint {
+        if let (Some(mountpoint), Some(uuid)) = (mountpoint, json_text(device, "uuid")) {
             let select = gtk::Button::with_label("Use");
             select.add_css_class("flat");
             select.set_tooltip_text(Some("Use this volume for Cadence snapshots"));
@@ -919,12 +1013,13 @@ fn append_device_row(
             let status_for_selection = status.clone();
             let sort_for_selection = sort_state.clone();
             let mountpoint_for_click = mountpoint.clone();
+            let uuid_for_click = uuid.clone();
             select.connect_clicked(move |_| {
-                match create_destination_config(&mountpoint_for_click) {
+                match create_destination_config(&mountpoint_for_click, &uuid_for_click) {
                     Ok(config) => match save_destination_config(&config) {
                         Ok(()) => {
                             *config_state.borrow_mut() = Some(config.clone());
-                            update_destination_info(&info_label, Some(&config));
+                            update_destination_info(&info_label, Some(&config), Some("Valid — volume identity, mount, permissions and available space verified"));
                             refresh_storage(
                                 &table_for_selection,
                                 &status_for_selection,
