@@ -241,7 +241,7 @@ fn make_storage_page() -> gtk::Box {
         ("Filesystem", 10),
         ("Size", 10),
         ("Available", 10),
-        ("Mounted at", 28),
+        ("Mounted at", 1),
     ]
     .iter()
     .enumerate()
@@ -251,6 +251,9 @@ fn make_storage_page() -> gtk::Box {
         label.add_css_class("dim-label");
         label.set_halign(gtk::Align::Start);
         label.set_width_chars(*width);
+        if index == 5 {
+            label.set_max_width_chars(40);
+        }
         label.set_hexpand(index == 5);
         column_header.append(&label);
     }
@@ -392,7 +395,7 @@ fn make_device_row(device: &Value) -> gtk::ListBoxRow {
         (filesystem, 10),
         (size, 10),
         (available, 10),
-        (mountpoint.clone(), 28),
+        (mountpoint.clone(), 1),
     ]
     .into_iter()
     .enumerate()
@@ -402,6 +405,9 @@ fn make_device_row(device: &Value) -> gtk::ListBoxRow {
         label.set_xalign(0.0);
         label.set_hexpand(index == 5);
         label.set_width_chars(width);
+        if index == 5 {
+            label.set_max_width_chars(40);
+        }
         label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
 
         if index == 0 && is_partition {
