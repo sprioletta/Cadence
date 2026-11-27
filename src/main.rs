@@ -257,10 +257,10 @@ fn make_storage_page() -> gtk::Box {
     }
 
     let scrolled = gtk::ScrolledWindow::builder()
+        .hexpand(true)
         .vexpand(true)
         .child(&list)
         .build();
-    scrolled.set_halign(gtk::Align::Start);
 
     page.append(&heading);
     page.append(&subtitle);
