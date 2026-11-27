@@ -273,6 +273,27 @@ fn make_storage_page() -> gtk::Box {
     destination_content.append(&destination_info);
     destination_card.set_child(Some(&destination_content));
 
+    let destination_result = gtk::Label::new(Some("No destination operation performed."));
+    destination_result.set_halign(gtk::Align::Start);
+    destination_result.set_xalign(0.0);
+    destination_result.set_wrap(true);
+    destination_result.add_css_class("dim-label");
+
+    let result_card = gtk::Frame::new(None);
+    result_card.add_css_class("card");
+    result_card.set_hexpand(true);
+    let result_content = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    result_content.set_margin_top(12);
+    result_content.set_margin_bottom(12);
+    result_content.set_margin_start(16);
+    result_content.set_margin_end(16);
+    let result_heading = gtk::Label::new(Some("Destination status"));
+    result_heading.add_css_class("heading");
+    result_heading.set_halign(gtk::Align::Start);
+    result_content.append(&result_heading);
+    result_content.append(&destination_result);
+    result_card.set_child(Some(&result_content));
+
     let table = gtk::Grid::new();
     table.set_column_spacing(12);
     table.set_row_spacing(0);
@@ -313,6 +334,7 @@ fn make_storage_page() -> gtk::Box {
     page.append(&subtitle);
     page.append(&toolbar);
     page.append(&destination_card);
+    page.append(&result_card);
     page.append(&device_card);
 
     let table_for_refresh = table.clone();
@@ -320,27 +342,24 @@ fn make_storage_page() -> gtk::Box {
     let sort_for_refresh = sort_state.clone();
     let config_for_refresh = destination_config.clone();
     let info_for_refresh = destination_info.clone();
+    let result_for_refresh = destination_result.clone();
     refresh.connect_clicked(move |_| {
-refresh_storage(
+        refresh_storage(
             &table_for_refresh,
             &status_for_refresh,
             &sort_for_refresh,
             &config_for_refresh,
             &info_for_refresh,
+            &result_for_refresh,
         );
     });
-refresh_storage(
-
+    refresh_storage(
         &table,
-
         &status,
-
         &sort_state,
-
         &destination_config,
-
         &destination_info,
-
+        &destination_result,
     );
     page
 }
@@ -351,6 +370,7 @@ fn refresh_storage(
     sort_state: &Rc<RefCell<Option<(usize, bool)>>>,
     destination_config: &Rc<RefCell<Option<DestinationConfig>>>,
     destination_info: &gtk::Label,
+    destination_result: &gtk::Label,
 ) {
     while let Some(child) = table.first_child() {
         table.remove(&child);
@@ -364,6 +384,7 @@ append_storage_header(
         sort_state,
         destination_config,
         destination_info,
+        destination_result,
     );
 
     let output = Command::new("lsblk")
@@ -406,14 +427,13 @@ append_storage_header(
         }
     }
 
+    update_destination_info(destination_info, destination_config.borrow().as_ref());
     let validation = destination_config
         .borrow()
         .as_ref()
         .map(|config| validate_destination(config, &devices));
-    update_destination_info(
-        destination_info,
-        destination_config.borrow().as_ref(),
-        validation.as_deref(),
+    destination_result.set_text(
+        validation.as_deref().unwrap_or("No active backup destination is configured."),
     );
 
     if devices.is_empty() {
@@ -441,6 +461,7 @@ append_device_row(
             index as i32 + 1,
             destination_config,
             destination_info,
+            destination_result,
             status,
             sort_state,
         );
@@ -568,30 +589,12 @@ fn save_destination_config(config: &DestinationConfig) -> Result<(), String> {
     Ok(())
 }
 
-fn update_destination_info(
-    label: &gtk::Label,
-    config: Option<&DestinationConfig>,
-    validation: Option<&str>,
-) {
+fn update_destination_info(label: &gtk::Label, config: Option<&DestinationConfig>) {
     match config {
-        Some(config) => {
-            let validation = validation.unwrap_or_else(|| {
-                if config.uuid.is_some() {
-                    "Validation pending"
-                } else {
-                    "Identity not verified — select this volume again with Use"
-                }
-            });
-            let status = if validation.starts_with("Valid —") {
-                "Active"
-            } else {
-                validation
-            };
-            label.set_text(&format!(
-                "Status: {}\nVolume: {}\nBackup folder: {}",
-                status, config.mountpoint, config.path
-            ));
-        }
+        Some(config) => label.set_text(&format!(
+            "Volume: {}\\nBackup folder: {}",
+            config.mountpoint, config.path
+        )),
         None => label.set_text("Not configured. Choose “Use” beside an eligible volume below."),
     }
 }
@@ -832,6 +835,7 @@ fn append_storage_header(
     sort_state: &Rc<RefCell<Option<(usize, bool)>>>,
     destination_config: &Rc<RefCell<Option<DestinationConfig>>>,
     destination_info: &gtk::Label,
+    destination_result: &gtk::Label,
 ) {
     for (column, (title, _)) in STORAGE_COLUMNS.iter().enumerate() {
         let label = if let Some((sorted_column, ascending)) = sort {
@@ -862,6 +866,7 @@ fn append_storage_header(
         let status_weak = status_for_sort.downgrade();
         let destination_config = destination_config.clone();
         let destination_info = destination_info.clone();
+        let destination_result = destination_result.clone();
         let sort_state = sort_state.clone();
         let gesture = gtk::GestureClick::new();
         gesture.connect_released(move |_, _, _, _| {
@@ -879,6 +884,7 @@ refresh_storage(
                     &sort_state,
                     &destination_config,
                     &destination_info,
+                    &destination_result,
                 );
             }
         });
@@ -928,6 +934,7 @@ fn append_device_row(
     row_index: i32,
     destination_config: &Rc<RefCell<Option<DestinationConfig>>>,
     destination_info: &gtk::Label,
+    destination_result: &gtk::Label,
     status: &gtk::Label,
     sort_state: &Rc<RefCell<Option<(usize, bool)>>>,
 ) {
@@ -1036,6 +1043,7 @@ fn append_device_row(
             select.set_tooltip_text(Some("Use this volume for Cadence snapshots"));
             let config_state = destination_config.clone();
             let info_label = destination_info.clone();
+            let result_label = destination_result.clone();
             let table_for_selection = table.clone();
             let status_for_selection = status.clone();
             let sort_for_selection = sort_state.clone();
@@ -1046,21 +1054,23 @@ fn append_device_row(
                     Ok(config) => match save_destination_config(&config) {
                         Ok(()) => {
                             *config_state.borrow_mut() = Some(config.clone());
-                            update_destination_info(&info_label, Some(&config), Some("Valid — volume identity, mount, permissions and available space verified"));
+                            update_destination_info(&info_label, Some(&config));
+                            result_label.set_text("Destination successfully set as the active backup destination.");
                             refresh_storage(
                                 &table_for_selection,
                                 &status_for_selection,
                                 &sort_for_selection,
                                 &config_state,
                                 &info_label,
+                                &result_label,
                             );
                         }
                         Err(error) => update_destination_error(
-                            &info_label,
+                            &result_label,
                             &format!("Could not save destination settings: {error}"),
                         ),
                     },
-                    Err(error) => update_destination_error(&info_label, &error),
+                    Err(error) => update_destination_error(&result_label, &error),
                 }
             });
             destination_cell.append(&select);
