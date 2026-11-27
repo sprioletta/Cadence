@@ -120,7 +120,7 @@ fn build_ui(application: &adw::Application) {
         .application(application)
         .title("Cadence")
         .default_width(1050)
-        .default_height(680)
+        .default_height(740)
         .content(&toolbar_view)
         .build();
 
