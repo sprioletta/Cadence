@@ -575,12 +575,6 @@ fn update_destination_info(
 ) {
     match config {
         Some(config) => {
-            let directory_state = if Path::new(&config.path).is_dir() {
-                "Directory exists"
-            } else {
-                "Directory will be created when the repository is initialized"
-            };
-            let identity = config.uuid.as_deref().unwrap_or("Not recorded");
             let validation = validation.unwrap_or_else(|| {
                 if config.uuid.is_some() {
                     "Validation pending"
@@ -588,9 +582,14 @@ fn update_destination_info(
                     "Identity not verified — select this volume again with Use"
                 }
             });
+            let status = if validation.starts_with("Valid —") {
+                "Active"
+            } else {
+                validation
+            };
             label.set_text(&format!(
-                "Volume: {}\nFilesystem UUID: {}\nSnapshot directory: {}\n{}\n{}",
-                config.mountpoint, identity, config.path, directory_state, validation
+                "Status: {}\nVolume: {}\nBackup folder: {}",
+                status, config.mountpoint, config.path
             ));
         }
         None => label.set_text("Not configured. Choose “Use” beside an eligible volume below."),
