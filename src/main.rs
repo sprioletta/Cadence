@@ -284,26 +284,23 @@ fn make_storage_page() -> gtk::Box {
     let status_for_refresh = status.clone();
     let sort_for_refresh = sort_state.clone();
     refresh.connect_clicked(move |_| {
-        refresh_storage(
-            &table_for_refresh,
-            &status_for_refresh,
-            *sort_for_refresh.borrow(),
-        );
+        refresh_storage(&table_for_refresh, &status_for_refresh, &sort_for_refresh);
     });
 
-    refresh_storage(&table, &status, *sort_state.borrow());
+    refresh_storage(&table, &status, &sort_state);
     page
 }
 
 fn refresh_storage(
     table: &gtk::Grid,
     status: &gtk::Label,
-    sort: Option<(usize, bool)>,
+    sort_state: &Rc<RefCell<Option<(usize, bool)>>>,
 ) {
     while let Some(child) = table.first_child() {
         table.remove(&child);
     }
-    append_storage_header(table, sort, table, status);
+    let sort = *sort_state.borrow();
+    append_storage_header(table, sort, table, status, sort_state);
 
     let output = Command::new("lsblk")
         .args([
@@ -522,6 +519,7 @@ fn append_storage_header(
     sort: Option<(usize, bool)>,
     table_for_sort: &gtk::Grid,
     status_for_sort: &gtk::Label,
+    sort_state: &Rc<RefCell<Option<(usize, bool)>>>,
 ) {
     for (column, (title, width)) in STORAGE_COLUMNS.iter().enumerate() {
         let label = if let Some((sorted_column, ascending)) = sort {
@@ -546,15 +544,17 @@ fn append_storage_header(
 
         let table_weak = table_for_sort.downgrade();
         let status_weak = status_for_sort.downgrade();
+        let sort_state = sort_state.clone();
         button.connect_clicked(move |_| {
             if let (Some(table), Some(status)) = (table_weak.upgrade(), status_weak.upgrade()) {
-                let next_sort = match sort {
+                let next_sort = match *sort_state.borrow() {
                     Some((current_column, ascending)) if current_column == column => {
                         Some((column, !ascending))
                     }
                     _ => Some((column, true)),
                 };
-                refresh_storage(&table, &status, next_sort);
+                *sort_state.borrow_mut() = next_sort;
+                refresh_storage(&table, &status, &sort_state);
             }
         });
 
