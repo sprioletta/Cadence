@@ -123,6 +123,15 @@ pub fn build_source_plan(
             exclusions.sort();
             exclusions.dedup();
 
+            // If an exclusion is this mount point or one of its ancestors,
+            // this filesystem must not become a source of its own.
+            if exclusions
+                .iter()
+                .any(|excluded| mount_point.starts_with(excluded))
+            {
+                continue;
+            }
+
             plan.sources.push(PlannedSource {
                 mount_id: mount.mount_id,
                 path: mount.mount_point.clone(),
@@ -152,6 +161,14 @@ pub fn build_source_plan(
             if blocked_by_skipped_mount {
                 plan.warnings.push(format!(
                     "User home {} is located on or below an excluded filesystem mount.",
+                    home.display()
+                ));
+                continue;
+            }
+
+            if user_source_is_excluded(options, home) {
+                plan.warnings.push(format!(
+                    "User home {} is covered by a user-data exclusion.",
                     home.display()
                 ));
                 continue;
@@ -333,7 +350,7 @@ fn system_exclusions_for_mount(
 
     for default in SYSTEM_DEFAULT_EXCLUSIONS {
         let path = Path::new(default);
-        if path.starts_with(mount_point) {
+        if path.starts_with(mount_point) || mount_point.starts_with(path) {
             exclusions.push(path.to_path_buf());
         }
     }
@@ -345,18 +362,29 @@ fn system_exclusions_for_mount(
     }
 
     for path in &options.system_custom_exclusions {
-        if path.starts_with(mount_point) {
+        if path.starts_with(mount_point) || mount_point.starts_with(path) {
             exclusions.push(path.clone());
         }
     }
 
     if let Some(destination) = &options.destination_path {
-        if destination.starts_with(mount_point) {
+        if destination.starts_with(mount_point) || mount_point.starts_with(destination) {
             exclusions.push(destination.clone());
         }
     }
 
     exclusions
+}
+
+fn user_source_is_excluded(options: &SourcePlanOptions, source_path: &Path) -> bool {
+    options
+        .user_custom_exclusions
+        .iter()
+        .any(|excluded| source_path.starts_with(excluded))
+        || options
+            .destination_path
+            .as_ref()
+            .is_some_and(|destination| source_path.starts_with(destination))
 }
 
 fn user_exclusions_for_path(options: &SourcePlanOptions, source_path: &Path) -> Vec<PathBuf> {
@@ -675,6 +703,28 @@ mod tests {
         config.user_custom_exclusions = vec![PathBuf::from("../private")];
 
         assert!(build_source_plan(&[mount(1, "/", "ext4")], &config).is_err());
+    }
+
+    #[test]
+    fn does_not_create_a_source_for_a_mountpoint_inside_a_system_exclusion() {
+        let plan = build_source_plan(
+            &[mount(1, "/", "ext4"), mount(2, "/var/cache", "xfs")],
+            &options(),
+        )
+        .unwrap();
+
+        assert!(!source_paths(&plan, BackupScope::System).contains(&PathBuf::from("/var/cache")));
+    }
+
+    #[test]
+    fn does_not_create_a_user_source_covered_by_a_parent_exclusion() {
+        let mut config = options();
+        config.user_custom_exclusions = vec![PathBuf::from("/home")];
+
+        let plan = build_source_plan(&[mount(1, "/", "ext4")], &config).unwrap();
+
+        assert!(source_paths(&plan, BackupScope::UserData).is_empty());
+        assert!(plan.warnings.iter().any(|warning| warning.contains("covered by a user-data exclusion")));
     }
 
     #[test]
