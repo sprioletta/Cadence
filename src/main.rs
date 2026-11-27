@@ -97,6 +97,94 @@ impl BackupConfig {
     }
 }
 
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct LocalUser {
+    username: String,
+    uid: u32,
+    home: PathBuf,
+}
+
+fn discover_local_users() -> Result<Vec<LocalUser>, String> {
+    let passwd = fs::read_to_string("/etc/passwd")
+        .map_err(|error| format!("Could not read /etc/passwd: {error}"))?;
+    let login_defs = fs::read_to_string("/etc/login.defs")
+        .map_err(|error| format!("Could not read /etc/login.defs: {error}"))?;
+    let shells_file = fs::read_to_string("/etc/shells")
+        .map_err(|error| format!("Could not read /etc/shells: {error}"))?;
+
+    let uid_min = configured_uid_min(&login_defs).unwrap_or(1000);
+    let shells = parse_login_shells(&shells_file);
+    Ok(parse_local_users(&passwd, uid_min, &shells, |home| home.is_dir()))
+}
+
+fn configured_uid_min(contents: &str) -> Option<u32> {
+    contents.lines().find_map(|line| {
+        let line = line.split('#').next()?.trim();
+        let mut fields = line.split_whitespace();
+        if fields.next()? != "UID_MIN" {
+            return None;
+        }
+        fields.next()?.parse().ok()
+    })
+}
+
+fn parse_login_shells(contents: &str) -> Vec<String> {
+    contents
+        .lines()
+        .filter_map(|line| {
+            let shell = line.split('#').next()?.trim();
+            if shell.starts_with('/') {
+                Some(shell.to_string())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn parse_local_users(
+    passwd: &str,
+    uid_min: u32,
+    shells: &[String],
+    home_is_directory: impl Fn(&Path) -> bool,
+) -> Vec<LocalUser> {
+    let mut users = Vec::new();
+
+    for line in passwd.lines() {
+        let fields: Vec<&str> = line.split(':').collect();
+        if fields.len() != 7 {
+            continue;
+        }
+
+        let username = fields[0];
+        let Ok(uid) = fields[2].parse::<u32>() else {
+            continue;
+        };
+        let home = Path::new(fields[5]);
+
+        if username.is_empty()
+            || username == "root"
+            || uid < uid_min
+            || !home.is_absolute()
+            || !home_is_directory(home)
+            || !shells.iter().any(|shell| shell == fields[6])
+        {
+            continue;
+        }
+
+        users.push(LocalUser {
+            username: username.to_string(),
+            uid,
+            home: home.to_path_buf(),
+        });
+    }
+
+    users.sort_by(|left, right| left.username.cmp(&right.username));
+    users.dedup_by(|left, right| left.username == right.username || left.uid == right.uid);
+    users
+}
+
 fn destination_from_json(value: &Value) -> Option<DestinationConfig> {
     let destination = value.get("destination").unwrap_or(value);
     let mountpoint = destination.get("mountpoint")?.as_str()?.to_string();
@@ -1444,6 +1532,63 @@ mod tests {
     }
 
     
+    #[test]
+    fn uid_min_is_read_from_login_defs_and_ignores_comments() {
+        assert_eq!(
+            super::configured_uid_min("# UID_MIN 500\nUID_MIN 1200\nUID_MAX 60000"),
+            Some(1200)
+        );
+        assert_eq!(super::configured_uid_min("# UID_MIN 500"), None);
+    }
+
+    #[test]
+    fn login_shells_ignore_comments_and_non_absolute_entries() {
+        assert_eq!(
+            super::parse_login_shells("# comment\n/bin/bash\ninvalid\n/usr/bin/zsh # zsh"),
+            vec!["/bin/bash", "/usr/bin/zsh"]
+        );
+    }
+
+    #[test]
+    fn local_user_detection_filters_system_accounts_and_invalid_homes() {
+        let passwd = concat!(
+            "root:x:0:0:root:/root:/bin/bash\n",
+            "daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\n",
+            "alice:x:1000:1000:Alice:/home/alice:/bin/bash\n",
+            "bob:x:1001:1001:Bob:/data/bob:/usr/bin/zsh\n",
+            "service:x:1500:1500:Service:/srv/service:/bin/false\n",
+            "missing:x:1600:1600:Missing:/home/missing:/bin/bash\n",
+            "relative:x:1700:1700:Relative:home/relative:/bin/bash\n",
+            "malformed:x:not-a-uid:1800:Bad:/home/bad:/bin/bash\n"
+        );
+        let shells = vec!["/bin/bash".to_string(), "/usr/bin/zsh".to_string()];
+        let users = super::parse_local_users(passwd, 1000, &shells, |home| {
+            matches!(home.to_str(), Some("/home/alice" | "/data/bob"))
+        });
+
+        assert_eq!(users.len(), 2);
+        assert_eq!(users[0].username, "alice");
+        assert_eq!(users[0].uid, 1000);
+        assert_eq!(users[0].home, std::path::PathBuf::from("/home/alice"));
+        assert_eq!(users[1].username, "bob");
+        assert_eq!(users[1].home, std::path::PathBuf::from("/data/bob"));
+    }
+
+    #[test]
+    fn duplicate_local_user_records_are_not_returned_twice() {
+        let passwd = concat!(
+            "alice:x:1000:1000:Alice:/home/alice:/bin/bash\n",
+            "alice:x:1000:1000:Alice:/home/alice:/bin/bash\n"
+        );
+        let users = super::parse_local_users(
+            passwd,
+            1000,
+            &["/bin/bash".to_string()],
+            |_| true,
+        );
+        assert_eq!(users.len(), 1);
+    }
+
     #[test]
     fn backup_configuration_defaults_to_system_and_all_user_data() {
         let config = BackupConfig::default();
