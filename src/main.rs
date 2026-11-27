@@ -257,10 +257,10 @@ fn make_storage_page() -> gtk::Box {
     }
 
     let scrolled = gtk::ScrolledWindow::builder()
-        .hexpand(true)
         .vexpand(true)
         .child(&list)
         .build();
+    scrolled.set_halign(gtk::Align::Start);
 
     page.append(&heading);
     page.append(&subtitle);
@@ -399,15 +399,9 @@ fn make_device_row(device: &Value) -> gtk::ListBoxRow {
 
     row.set_spacing(12);
 
-    let values = [
-        path,
-        kind,
-        filesystem,
-        size,
-        available,
-        mountpoint_display,
-    ];
-    for (column, (value, (_, width))) in values.into_iter().zip(STORAGE_COLUMNS.iter()).enumerate() {
+    let values = [path, kind, filesystem, size, available, mountpoint_display];
+    for (column, (value, (_, width))) in values.into_iter().zip(STORAGE_COLUMNS.iter()).enumerate()
+    {
         let label = gtk::Label::new(Some(&value));
         label.set_halign(if column == 3 || column == 4 {
             gtk::Align::End
