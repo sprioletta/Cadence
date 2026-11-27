@@ -10,7 +10,7 @@ const STORAGE_COLUMNS: [(&str, i32); 7] = [
     ("Size (GB)", 90),
     ("Available (GB)", 100),
     ("Mounted at", 120),
-    ("Destination", 132),
+    ("Destination check", 150),
 ];
 
 fn main() {
@@ -470,7 +470,6 @@ fn append_storage_header(table: &gtk::Grid) {
 }
 
 fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
-
     let path = json_text(device, "path")
         .or_else(|| json_text(device, "name"))
         .unwrap_or_else(|| "Unknown".to_string());
@@ -527,6 +526,26 @@ fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
 
         if column == 5 && mountpoint != "—" {
             label.set_tooltip_text(Some(&mountpoint));
+        }
+        if column == 6 {
+            let explanation = match value.as_str() {
+                "Candidate" => {
+                    "Preliminary candidate only. Final backup preflight is still required."
+                }
+                "System root" => "The running system root is not accepted as a backup destination.",
+                "Verify filesystem" => {
+                    "Filesystem support for the required snapshot features is not confirmed."
+                }
+                "Check free space" => "Available space could not be determined.",
+                "Mount not verified" => "The mount status could not be verified.",
+                "Access not verified" => "Write access could not be checked.",
+                "Mount mode unknown" => "The mount options do not clearly indicate read-write access.",
+                "No write access" => "The current user does not have write access to this mountpoint.",
+                "No free space" => "The filesystem reports no available space.",
+                "Read-only" => "The filesystem is mounted read-only.",
+                _ => "The filesystem is not mounted.",
+            };
+            label.set_tooltip_text(Some(explanation));
         }
         label.set_margin_top(10);
         label.set_margin_bottom(10);
