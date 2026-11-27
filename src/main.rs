@@ -236,52 +236,39 @@ fn make_storage_page() -> gtk::Box {
     toolbar.append(&status);
     toolbar.append(&refresh);
 
-    let list = gtk::ListBox::new();
-    list.add_css_class("boxed-list");
-    list.set_selection_mode(gtk::SelectionMode::None);
-
-    let column_header = gtk::Grid::new();
-    column_header.set_column_spacing(12);
-    column_header.set_margin_start(12);
-    column_header.set_margin_end(12);
-    column_header.set_margin_top(8);
-    column_header.set_margin_bottom(8);
-    for (column, (title, width)) in STORAGE_COLUMNS.iter().enumerate() {
-        let label = gtk::Label::new(Some(title));
-        label.add_css_class("caption");
-        label.add_css_class("dim-label");
-        label.set_halign(gtk::Align::Start);
-        label.set_width_request(*width);
-        label.set_hexpand(column == STORAGE_COLUMNS.len() - 1);
-        column_header.attach(&label, column as i32, 0, 1, 1);
-    }
+    let table = gtk::Grid::new();
+    table.set_column_spacing(12);
+    table.set_row_spacing(0);
+    table.set_hexpand(true);
+    table.set_margin_start(12);
+    table.set_margin_end(12);
 
     let scrolled = gtk::ScrolledWindow::builder()
         .hexpand(true)
         .vexpand(true)
-        .child(&list)
+        .child(&table)
         .build();
 
     page.append(&heading);
     page.append(&subtitle);
     page.append(&toolbar);
-    page.append(&column_header);
     page.append(&scrolled);
 
-    let list_for_refresh = list.clone();
+    let table_for_refresh = table.clone();
     let status_for_refresh = status.clone();
     refresh.connect_clicked(move |_| {
-        refresh_storage(&list_for_refresh, &status_for_refresh);
+        refresh_storage(&table_for_refresh, &status_for_refresh);
     });
 
-    refresh_storage(&list, &status);
+    refresh_storage(&table, &status);
     page
 }
 
-fn refresh_storage(list: &gtk::ListBox, status: &gtk::Label) {
-    while let Some(child) = list.first_child() {
-        list.remove(&child);
+fn refresh_storage(table: &gtk::Grid, status: &gtk::Label) {
+    while let Some(child) = table.first_child() {
+        table.remove(&child);
     }
+    append_storage_header(table);
 
     let output = Command::new("lsblk")
         .args([
@@ -329,8 +316,8 @@ fn refresh_storage(list: &gtk::ListBox, status: &gtk::Label) {
     }
 
     let count = devices.len();
-    for device in devices {
-        list.append(&make_device_row(&device));
+    for (index, device) in devices.iter().enumerate() {
+        append_device_row(table, device, index as i32 + 1);
     }
     status.set_text(&format!(
         "Found {count} devices and partitions. Information is read-only."
@@ -346,13 +333,21 @@ fn collect_devices(device: &Value, devices: &mut Vec<Value>) {
     }
 }
 
-fn make_device_row(device: &Value) -> gtk::ListBoxRow {
-    let row = gtk::Grid::new();
-    row.set_column_spacing(12);
-    row.set_margin_start(12);
-    row.set_margin_end(12);
-    row.set_margin_top(10);
-    row.set_margin_bottom(10);
+fn append_storage_header(table: &gtk::Grid) {
+    for (column, (title, width)) in STORAGE_COLUMNS.iter().enumerate() {
+        let label = gtk::Label::new(Some(title));
+        label.add_css_class("caption");
+        label.add_css_class("dim-label");
+        label.set_halign(gtk::Align::Start);
+        label.set_width_request(*width);
+        label.set_hexpand(column == STORAGE_COLUMNS.len() - 1);
+        label.set_margin_top(8);
+        label.set_margin_bottom(8);
+        table.attach(&label, column as i32, 0, 1, 1);
+    }
+}
+
+fn append_device_row(table: &gtk::Grid, device: &Value, row_index: i32) {
 
     let path = json_text(device, "path")
         .or_else(|| json_text(device, "name"))
@@ -415,12 +410,10 @@ fn make_device_row(device: &Value) -> gtk::ListBoxRow {
         if column == 5 && mountpoint != "—" {
             label.set_tooltip_text(Some(&mountpoint));
         }
-        row.attach(&label, column as i32, 0, 1, 1);
+        label.set_margin_top(10);
+        label.set_margin_bottom(10);
+        table.attach(&label, column as i32, row_index, 1, 1);
     }
-
-    let list_row = gtk::ListBoxRow::new();
-    list_row.set_child(Some(&row));
-    list_row
 }
 
 fn json_text(value: &Value, key: &str) -> Option<String> {
