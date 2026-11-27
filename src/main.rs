@@ -1,3 +1,5 @@
+mod mount_inventory;
+
 use adw::prelude::*;
 use serde_json::Value;
 use std::cell::RefCell;
